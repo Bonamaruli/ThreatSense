@@ -1,12 +1,14 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.database import get_db
 from app.models.threat import ScanHistory
+from app.schemas import DashboardStatsResponse, ScanHistoryResponse
+from datetime import datetime
 
 router = APIRouter()
 
-@router.get("/stats")
+@router.get("/stats", response_model=DashboardStatsResponse)
 async def get_dashboard_stats(db: Session = Depends(get_db)):
     """
     Get dashboard statistics
@@ -25,14 +27,14 @@ async def get_dashboard_stats(db: Session = Depends(get_db)):
         ScanHistory.risk_score >= 70
     ).count()
     
-    return {
-        "totalScan": total_scan,
-        "ancamanTerdeteksi": ancaman,
-        "scanAman": aman,
-        "scanBerbahaya": berbahaya
-    }
+    return DashboardStatsResponse(
+        totalScan=total_scan,
+        ancamanTerdeteksi=ancaman,
+        scanAman=aman,
+        scanBerbahaya=berbahaya
+    )
 
-@router.get("/recent-scans")
+@router.get("/recent-scans", response_model=list[ScanHistoryResponse])
 async def get_recent_scans(limit: int = 10, db: Session = Depends(get_db)):
     """
     Get recent scan history
@@ -42,13 +44,13 @@ async def get_recent_scans(limit: int = 10, db: Session = Depends(get_db)):
     ).limit(limit).all()
     
     return [
-        {
-            "id": scan.id,
-            "scan_type": scan.scan_type,
-            "input_value": scan.input_value,
-            "risk_score": scan.risk_score,
-            "threat_label": scan.threat_label,
-            "created_at": scan.created_at
-        }
+        ScanHistoryResponse(
+            id=scan.id,
+            scan_type=scan.scan_type,
+            input_value=scan.input_value,
+            risk_score=scan.risk_score,
+            threat_label=scan.threat_label,
+            created_at=scan.created_at
+        )
         for scan in scans
     ]

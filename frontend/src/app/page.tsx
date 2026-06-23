@@ -4,23 +4,44 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Shield, Link as LinkIcon, Mail, FileText, LayoutDashboard, History, Info, Search, User, Globe, File } from 'lucide-react'
+import { ScanForm } from '@/components/ui/ScanForm'
+import { useToast } from '@/components/ui/Toast'
+import { scanApi } from '@/lib/services'
+import type { ScanType } from '@/types'
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'url' | 'email' | 'file'>('url')
-  const [inputValue, setInputValue] = useState('')
+  const [isScanning, setIsScanning] = useState(false)
+  const toast = useToast()
 
-  const handleScan = () => {
-    console.log('Scanning:', inputValue, 'Type:', activeTab)
+  const handleScan = async (type: ScanType, value: string, file?: File) => {
+    setIsScanning(true)
+    
+    try {
+      const result = await scanApi.performScan(type, value, file)
+      
+      if (result.success && result.data) {
+        toast.success(`Scan ${type} selesai! Skor risiko: ${result.data.score}`)
+        // Redirect ke halaman hasil atau simpan data
+        console.log('Hasil scan:', result.data)
+      } else {
+        toast.error(result.error?.message || 'Gagal melakukan scan')
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Terjadi kesalahan saat scan')
+    } finally {
+      setIsScanning(false)
+    }
   }
 
   return (
-    <motion.div 
-      className="min-h-screen bg-[#0a0a0f] text-white relative overflow-x-hidden"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.5 }}
-    >
+    <>
+      <motion.div 
+        className="min-h-screen bg-[#0a0a0f] text-white relative overflow-x-hidden"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.5 }}
+      >
       {/* Background Grid Pattern */}
       <div 
         className="fixed inset-0 opacity-20 pointer-events-none"
@@ -140,88 +161,14 @@ export default function Home() {
           </p>
         </motion.div>
 
-        {/* Scan Form */}
+        {/* Scan Form - Menggunakan komponen reusable */}
         <motion.div 
           className="max-w-3xl mx-auto mb-20"
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3, duration: 0.8 }}
         >
-          {/* Tab Selector */}
-          <div className="flex justify-center mb-6">
-            <div className="inline-flex bg-white/5 border border-white/10 rounded-lg p-1 gap-1">
-              {(['url', 'email', 'file'] as const).map((tab) => {
-                const icons = {
-                  url: <LinkIcon className="w-4 h-4" />,
-                  email: <Mail className="w-4 h-4" />,
-                  file: <File className="w-4 h-4" />
-                }
-                const colors = {
-                  url: 'cyan',
-                  email: 'purple',
-                  file: 'green'
-                }
-                const color = colors[tab]
-                const isActive = activeTab === tab
-                
-                return (
-                  <motion.button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`flex items-center gap-2 px-6 py-2 rounded-md transition-all capitalize ${
-                      isActive
-                        ? `bg-${color}-500/20 text-${color}-400 border border-${color}-500/50`
-                        : 'text-gray-400 hover:text-white'
-                    }`}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    {icons[tab]}
-                    {tab}
-                  </motion.button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Input Field */}
-          <motion.div 
-            className="flex gap-3"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.4, duration: 0.6 }}
-          >
-            <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-              <input
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder={`Masukkan ${activeTab === 'url' ? 'URL' : activeTab === 'email' ? 'email' : 'file'} — contoh: ${
-                  activeTab === 'url' ? 'https://suspicious-login.ru' : activeTab === 'email' ? 'phishing@example.com' : 'malware.exe'
-                }`}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-12 py-4 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500/50 transition-colors"
-              />
-            </div>
-            <motion.button
-              onClick={handleScan}
-              className="px-8 py-4 bg-gradient-to-r from-cyan-500 to-cyan-600 rounded-lg font-semibold hover:shadow-lg hover:shadow-cyan-500/50 transition-all flex items-center gap-2"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <Shield className="w-5 h-5" />
-              Scan Sekarang
-            </motion.button>
-          </motion.div>
-
-          <motion.p 
-            className="text-center text-sm text-gray-500 mt-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-          >
-            Coba: suspicious-login.ru · Gratis · Tidak perlu daftar
-          </motion.p>
+          <ScanForm onScan={handleScan} loading={isScanning} />
         </motion.div>
 
         {/* Feature Cards */}
@@ -320,6 +267,8 @@ export default function Home() {
           </p>
         </div>
       </motion.footer>
-    </motion.div>
+      </motion.div>
+      <toast.ToastContainer />
+    </>
   )
 }

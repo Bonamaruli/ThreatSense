@@ -1,18 +1,10 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
-import os
+from app.config import settings
 
-# Load environment variables dari file .env
-load_dotenv()
-
-# Ambil DATABASE_URL dari .env
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-# Validasi DATABASE_URL ada
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL tidak ditemukan di file .env!")
+# Ambil DATABASE_URL dari config (dengan fallback ke default)
+DATABASE_URL = settings.DATABASE_URL
 
 # Buat engine SQLAlchemy
 engine = create_engine(DATABASE_URL)
