@@ -14,7 +14,26 @@ export interface ScanResult {
     threats?: string[];
     shapValues?: Record<string, number>;
     metadata?: Record<string, any>;
+    /**
+     * Alasan berbahasa manusia kenapa URL ini dinilai begitu, sudah urut
+     * dari yang paling berat. Contoh isi:
+     *   { judul: "Peniruan merek",
+     *     alasan: "Menyebut 'bri' padahal ini bukan domain resminya...",
+     *     bobot: 0.9 }
+     *
+     * Tampilkan ini ke pengguna, bukan cuma angka persennya. Skor 90% tanpa
+     * keterangan tidak memberi tahu apa pun; "menyebut bri padahal bukan
+     * domain resmi BRI" langsung bisa dimengerti dan ditindaklanjuti.
+     */
+    explanations?: ScanExplanation[];
   };
+}
+
+/** Satu alasan penilaian, dikirim backend lewat field `explanations`. */
+export interface ScanExplanation {
+  judul: string;
+  alasan: string;
+  bobot: number;
 }
 
 export interface DashboardStats {

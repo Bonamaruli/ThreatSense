@@ -1,0 +1,57 @@
+{
+  "best_model": "xgboost",
+  "feature_columns": [
+    "hostname_length",
+    "domain_length",
+    "tld_length",
+    "subdomain_count",
+    "domain_entropy",
+    "hostname_entropy",
+    "count_digit",
+    "digit_ratio",
+    "count_hyphen",
+    "hyphen_ratio",
+    "vowel_ratio",
+    "longest_consonant_run",
+    "max_char_repeat",
+    "digit_letter_transitions",
+    "token_count",
+    "avg_token_length",
+    "max_token_length",
+    "has_ip_address",
+    "has_port",
+    "has_punycode",
+    "is_shortener",
+    "suspicious_tld",
+    "common_tld",
+    "contains_brand",
+    "brand_impersonation",
+    "brand_edit_distance",
+    "phishing_keyword_count",
+    "has_phishing_keyword",
+    "judol_keyword_count",
+    "has_judol_keyword",
+    "judol_strong_count"
+  ],
+  "metrics": {
+    "xgboost": {
+      "accuracy": 0.640125,
+      "precision": 0.6673633920573305,
+      "recall": 0.55875,
+      "f1_score": 0.6082460198666485,
+      "roc_auc": 0.7092636875
+    },
+    "lightgbm": {
+      "accuracy": 0.637875,
+      "precision": 0.665268204974528,
+      "recall": 0.555,
+      "f1_score": 0.6051519694698105,
+      "roc_auc": 0.7073978437499999
+    }
+  },
+  "recommended_threshold_for_98pct_recall": 0.2400873601436615,
+  "default_threshold": 0.5,
+  "trained_at": "2026-08-03T23:47:22.946694",
+  "train_size": 31999,
+  "test_size": 8000
+}

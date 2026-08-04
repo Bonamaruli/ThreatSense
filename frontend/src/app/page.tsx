@@ -2,27 +2,52 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Shield, Link as LinkIcon, Mail, FileText, LayoutDashboard, History, Info, Search, User, Globe, File } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { ScanForm } from '@/components/ui/ScanForm'
+import { ScanResult } from '@/components/ui/ScanResult'
 import { useToast } from '@/components/ui/Toast'
 import { scanApi } from '@/lib/services'
-import type { ScanType } from '@/types'
+import { sedangMasuk } from '@/lib/auth'
+import type { ScanType, ScanResult as ScanResultType } from '@/types'
 
 export default function Home() {
+  const router = useRouter()
   const [isScanning, setIsScanning] = useState(false)
+  // Hasil scan terakhir. Sebelumnya hasilnya cuma masuk console.log sehingga
+  // pengguna tidak pernah melihat apa pun selain notifikasi sekilas.
+  const [hasil, setHasil] = useState<ScanResultType | null>(null)
   const toast = useToast()
 
   const handleScan = async (type: ScanType, value: string, file?: File) => {
+    // Scan sekarang butuh akun, karena hasilnya disimpan ke riwayat pemiliknya.
+    // Dicegat di sini supaya pengguna mendapat penjelasan yang jelas, bukan
+    // sekadar error 401 dari server yang membingungkan.
+    if (!sedangMasuk()) {
+      toast.warning('Masuk dulu supaya hasil scan tersimpan di riwayatmu.')
+      router.push('/login')
+      return
+    }
+
     setIsScanning(true)
-    
+    setHasil(null)
+
     try {
       const result = await scanApi.performScan(type, value, file)
-      
+
       if (result.success && result.data) {
-        toast.success(`Scan ${type} selesai! Skor risiko: ${result.data.score}`)
-        // Redirect ke halaman hasil atau simpan data
-        console.log('Hasil scan:', result.data)
+        setHasil(result.data)
+
+        // Notifikasi dibedakan supaya temuan berbahaya tidak lewat begitu saja
+        // sebagai pesan hijau yang terkesan baik-baik saja.
+        if (result.data.status === 'berbahaya') {
+          toast.error('Terdeteksi berbahaya — lihat alasannya di bawah.')
+        } else if (result.data.status === 'mencurigakan') {
+          toast.warning('Ada yang mencurigakan — lihat alasannya di bawah.')
+        } else {
+          toast.success('Scan selesai, tidak ditemukan tanda bahaya.')
+        }
       } else {
         toast.error(result.error?.message || 'Gagal melakukan scan')
       }
@@ -169,6 +194,19 @@ export default function Home() {
           transition={{ delay: 0.3, duration: 0.8 }}
         >
           <ScanForm onScan={handleScan} loading={isScanning} />
+
+          {/* Hasil scan, muncul tepat di bawah form */}
+          <AnimatePresence mode="wait">
+            {hasil && (
+              <div className="mt-6">
+                <ScanResult
+                  key={hasil.id}
+                  result={hasil}
+                  onClose={() => setHasil(null)}
+                />
+              </div>
+            )}
+          </AnimatePresence>
         </motion.div>
 
         {/* Feature Cards */}

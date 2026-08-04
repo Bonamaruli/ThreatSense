@@ -44,7 +44,11 @@ export function ScanForm({ onScan, loading = false }: ScanFormProps) {
       case 'url':
         return 'https://suspicious-login.ru';
       case 'email':
-        return 'phishing@example.com';
+        // Yang diperiksa adalah ISI email, bukan alamat pengirimnya saja.
+        // Sebelumnya kolom ini meminta alamat email ("phishing@example.com"),
+        // padahal backend menganalisis header dan isi surat lengkap - jadi
+        // apa pun yang diketik pengguna tidak pernah bisa dinilai benar.
+        return 'Tempel seluruh isi email di sini, termasuk baris From: dan Subject: bila ada';
       case 'file':
         return 'Pilih file untuk di-scan';
     }
@@ -55,7 +59,7 @@ export function ScanForm({ onScan, loading = false }: ScanFormProps) {
       case 'url':
         return 'Coba: suspicious-login.ru';
       case 'email':
-        return 'Coba: phishing@fake-bank.com';
+        return 'Tip: di Gmail buka menu ⋮ → "Show original" agar header ikut tersalin';
       case 'file':
         return 'Format: PDF, DOCX, EXE, ZIP (max 10MB)';
     }
@@ -110,8 +114,12 @@ export function ScanForm({ onScan, loading = false }: ScanFormProps) {
       </div>
 
       {/* Input Field */}
-      <motion.div 
-        className="flex gap-3"
+      {/*
+        items-start supaya tombol Scan tidak ikut memanjang mengikuti tinggi
+        textarea email yang 8 baris.
+      */}
+      <motion.div
+        className="flex gap-3 items-start"
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
       >
@@ -137,6 +145,21 @@ export function ScanForm({ onScan, loading = false }: ScanFormProps) {
                 </span>
               </button>
             </>
+          ) : activeTab === 'email' ? (
+            /*
+              Email dipisah dari URL karena bentuk masukannya beda jauh:
+              URL cuma sebaris, sedangkan email bisa puluhan baris berisi
+              header, isi surat, dan tautan. Memaksakan keduanya ke satu
+              kotak sebaris membuat email tidak mungkin ditempel utuh.
+            */
+            <textarea
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder={getPlaceholder()}
+              disabled={loading}
+              rows={8}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-4 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 transition-colors disabled:opacity-50 font-mono text-sm resize-y"
+            />
           ) : (
             <>
               <Shield className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />

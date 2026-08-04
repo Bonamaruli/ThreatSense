@@ -1,5 +1,6 @@
 import apiClient from './api';
 import { ScanResult, DashboardStats, ApiResponse } from '@/types';
+import { mapScanResult, mapScanResultList, mapDashboardStats } from './mappers';
 
 // API services untuk ThreatSense
 
@@ -8,25 +9,29 @@ export const scanApi = {
   async performScan(type: 'url' | 'email' | 'file', input: string, file?: File): Promise<ApiResponse<ScanResult>> {
     try {
       let response;
-      
+
       if (type === 'file' && file) {
         // Upload file dengan FormData
         const formData = new FormData();
         formData.append('file', file);
-        
+
         response = await apiClient.post(`/scan/${type}`, formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
         });
       } else {
-        // Scan URL atau email dengan JSON
-        response = await apiClient.post(`/scan/${type}`, { input });
+        // Field name berbeda tergantung tipe scan, sesuai schema backend
+        const payload = type === 'url'
+          ? { url: input }
+          : { email_content: input };
+
+        response = await apiClient.post(`/scan/${type}`, payload);
       }
-      
+
       return {
         success: true,
-        data: response.data,
+        data: mapScanResult(response.data), // <- konversi snake_case -> camelCase di sini
       };
     } catch (error: any) {
       return {
@@ -42,7 +47,7 @@ export const scanApi = {
       const response = await apiClient.get(`/scan/${id}`);
       return {
         success: true,
-        data: response.data,
+        data: mapScanResult(response.data),
       };
     } catch (error: any) {
       return {
@@ -52,18 +57,27 @@ export const scanApi = {
     }
   },
 
-  // Mendapatkan riwayat scan
+  /**
+   * Mendapatkan riwayat scan milik akun yang sedang masuk.
+   *
+   * Dialihkan ke /dashboard/recent karena backend tidak punya endpoint
+   * /scan/history — pemanggilan lama selalu menghasilkan 404 tanpa ada yang
+   * menyadarinya, sebab halaman riwayat memang belum pernah memanggil fungsi
+   * ini.
+   *
+   * Penyaringan tipe dan status dilakukan di browser (lihat halaman riwayat),
+   * jadi parameternya tidak dikirim ke server.
+   */
   async getScanHistory(params?: {
-    type?: 'url' | 'email' | 'file';
-    status?: 'aman' | 'mencurigakan' | 'berbahaya';
     limit?: number;
-    offset?: number;
   }): Promise<ApiResponse<ScanResult[]>> {
     try {
-      const response = await apiClient.get('/scan/history', { params });
+      const response = await apiClient.get('/dashboard/recent', {
+        params: { limit: params?.limit ?? 100 },
+      });
       return {
         success: true,
-        data: response.data,
+        data: mapScanResultList(response.data.scans),
       };
     } catch (error: any) {
       return {
@@ -96,7 +110,23 @@ export const dashboardApi = {
       const response = await apiClient.get('/dashboard/stats');
       return {
         success: true,
-        data: response.data,
+        data: mapDashboardStats(response.data),
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error,
+      };
+    }
+  },
+
+  // Mendapatkan riwayat scan terbaru (endpoint ini SUDAH ada di backend)
+  async getRecentScans(limit: number = 10): Promise<ApiResponse<ScanResult[]>> {
+    try {
+      const response = await apiClient.get('/dashboard/recent', { params: { limit } });
+      return {
+        success: true,
+        data: mapScanResultList(response.data.scans),
       };
     } catch (error: any) {
       return {

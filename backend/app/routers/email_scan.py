@@ -1,26 +1,34 @@
-from fastapi import APIRouter, HTTPException
-from app.schemas import EmailScanRequest, EmailScanResponse
+import logging
 
-router = APIRouter()
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.dependencies import get_current_user
+from app.models.user import User
+from app.schemas.scan import EmailScanRequest, EmailScanResponse
+from app.services.scan_service import process_email_scan
 
-@router.post("/email", response_model=EmailScanResponse)
-async def scan_email(request: EmailScanRequest):
-    """
-    Endpoint untuk scan email
-    Menganalisis konten email untuk mendeteksi potensi phishing atau malware
-    """
-    email_content = request.email_content
-    
-    # TODO: Implement actual email scanning logic
-    # - Analyze email headers
-    # - Check sender reputation
-    # - Scan for phishing patterns
-    # - Check attachments
-    
-    # Stub response untuk sekarang
-    return EmailScanResponse(
-        status="success",
-        message="Email analysis completed (stub implementation)",
-        risk_score=0.0,
-        threat_label="safe"
-    )
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/email", tags=["Email Scan"])
+
+
+@router.post("", response_model=EmailScanResponse)
+def scan_email(
+    req: EmailScanRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        return process_email_scan(db, req, user_id=user.id)
+    except Exception:
+        # Isi email TIDAK ikut di-log — itu data pribadi milik pengguna.
+        # Cukup catat panjangnya untuk keperluan debugging.
+        logger.exception(
+            "Gagal memindai email (panjang konten: %d karakter)",
+            len(req.email_content),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Terjadi kesalahan internal saat memindai email.",
+        )

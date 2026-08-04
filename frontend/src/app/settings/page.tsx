@@ -1,5 +1,7 @@
 'use client'
 
+import RequireAuth from '@/components/RequireAuth'
+
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
@@ -20,7 +22,7 @@ import Header from '@/components/Header'
 type SettingsTab = 'profil' | 'notifikasi' | 'tampilan'
 type Theme = 'gelap' | 'terang'
 
-export default function SettingsPage() {
+function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('profil')
   const [notifAncaman, setNotifAncaman] = useState(true)
   const [notifScan, setNotifScan] = useState(true)
@@ -419,5 +421,15 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (valu
         transition={{ type: "spring", stiffness: 500, damping: 30 }}
       />
     </motion.button>
+  )
+}
+
+// Halaman Pengaturan hanya untuk pengguna yang sudah masuk.
+// Penjagaan sesungguhnya ada di backend - lihat catatan di RequireAuth.tsx.
+export default function HalamanSettingsPage() {
+  return (
+    <RequireAuth>
+      <SettingsPage />
+    </RequireAuth>
   )
 }

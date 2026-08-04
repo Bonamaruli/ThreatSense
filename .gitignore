@@ -1,4 +1,3 @@
-```
 # Dependencies
 node_modules/
 
@@ -11,8 +10,6 @@ __pycache__/
 env/
 venv/
 .venv/
-.ENV
-.ENV.*
 .python-version
 *.so
 *.egg-info/
@@ -27,18 +24,27 @@ htmlcov/
 dist/
 build/
 *.egg
-*.pyc
-*.pyo
-*.pyd
 *.db
 *.sqlite
 *.sqlite3
+
+# Next.js
+.next/
+out/
 
 # Environment variables
 .env
 .env.local
 .env.*
 !.env.example
+
+# Dataset mentah & hasil olahan — JANGAN commit (54 MB), bisa dibuat ulang
+# dengan menjalankan: python ml/data/build_dataset.py
+ml/data/raw/
+ml/data/processed/
+
+# Catatan: file model ml/models/*.pkl SENGAJA ikut di-commit.
+# Ukurannya kecil (~1 MB total) dan penting untuk reproducibility TA.
 
 # IDE and editor files
 .vscode/
@@ -56,11 +62,8 @@ tmp/
 temp/
 
 # OS generated files
-.DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db
-```

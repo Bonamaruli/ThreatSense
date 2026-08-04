@@ -1,22 +1,13 @@
 @echo off
-echo ========================================
-echo ThreatSense Backend - Starting...
-echo ========================================
-echo.
+REM ====================================================================
+REM  Berkas ini dipertahankan supaya kebiasaan lama tetap jalan.
+REM  Isinya sekarang cuma meneruskan ke start-backend.bat di folder root.
+REM
+REM  Versi lamanya menjalankan "uvicorn app.main:app" setelah activate.bat,
+REM  dan itu hanya berhasil kalau dijalankan dari dalam folder backend.
+REM  Dijalankan dari tempat lain hasilnya selalu:
+REM      ModuleNotFoundError: No module named 'app'
+REM ====================================================================
 
-REM Pastikan script berjalan dari folder backend
-cd /d "%~dp0"
-
-REM Aktifkan virtual environment
-echo [1/2] Activating virtual environment...
-call venv\Scripts\activate.bat
-
-REM Jalankan server
-echo [2/2] Starting FastAPI server...
-echo Server akan berjalan di http://localhost:8000
-echo Tekan CTRL+C untuk stop
-echo.
-
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-pause
+cd /d "%~dp0.."
+call start-backend.bat %*

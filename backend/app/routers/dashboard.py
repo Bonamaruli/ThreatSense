@@ -1,56 +1,35 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from app.database import get_db
-from app.models.threat import ScanHistory
-from app.schemas import DashboardStatsResponse, ScanHistoryResponse
-from datetime import datetime
 
-router = APIRouter()
+from app.database import get_db
+from app.dependencies import get_current_user
+from app.models.user import User
+from app.schemas.scan import DashboardStatsResponse, RecentScansResponse
+from app.services.scan_service import get_dashboard_stats, get_recent_scans
+
+router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
+
 
 @router.get("/stats", response_model=DashboardStatsResponse)
-async def get_dashboard_stats(db: Session = Depends(get_db)):
-    """
-    Get dashboard statistics
-    """
-    total_scan = db.query(ScanHistory).count()
-    
-    ancaman = db.query(ScanHistory).filter(
-        ScanHistory.risk_score >= 70
-    ).count()
-    
-    aman = db.query(ScanHistory).filter(
-        ScanHistory.risk_score < 30
-    ).count()
-    
-    berbahaya = db.query(ScanHistory).filter(
-        ScanHistory.risk_score >= 70
-    ).count()
-    
-    return DashboardStatsResponse(
-        totalScan=total_scan,
-        ancamanTerdeteksi=ancaman,
-        scanAman=aman,
-        scanBerbahaya=berbahaya
-    )
+def dashboard_stats(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Statistik milik akun yang sedang masuk saja."""
+    return get_dashboard_stats(db, user.id)
 
-@router.get("/recent-scans", response_model=list[ScanHistoryResponse])
-async def get_recent_scans(limit: int = 10, db: Session = Depends(get_db)):
+
+@router.get("/recent", response_model=RecentScansResponse)
+def recent_scans(
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """
-    Get recent scan history
+    Riwayat scan milik akun yang sedang masuk saja.
+
+    Sengaja TIDAK menerima parameter user_id dari luar. Kalau id pemiliknya
+    boleh dikirim lewat URL, siapa pun bisa mengganti angkanya dan membaca
+    riwayat orang lain. Pemiliknya selalu diambil dari token.
     """
-    scans = db.query(ScanHistory).order_by(
-        ScanHistory.created_at.desc()
-    ).limit(limit).all()
-    
-    return [
-        ScanHistoryResponse(
-            id=scan.id,
-            scan_type=scan.scan_type,
-            input_value=scan.input_value,
-            risk_score=scan.risk_score,
-            threat_label=scan.threat_label,
-            created_at=scan.created_at
-        )
-        for scan in scans
-    ]
+    return get_recent_scans(db, user.id, limit)
