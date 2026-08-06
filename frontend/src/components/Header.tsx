@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Search, Bell, ChevronDown, LogOut } from 'lucide-react'
+import Link from 'next/link'
+import { Search, Bell, ChevronDown, LogOut, Settings } from 'lucide-react'
 import { AuthUser, keluar, profilSaya } from '@/lib/auth'
 
 interface HeaderProps {
@@ -97,6 +98,18 @@ export default function Header({ title, subtitle }: HeaderProps) {
                     <p className="text-sm font-medium truncate">{user.nama}</p>
                     <p className="text-xs text-gray-500 truncate">{user.email}</p>
                   </div>
+                  {/* Menu ke Pengaturan. Sebelumnya isi dropdown ini hanya
+                      tombol Keluar, sehingga satu-satunya jalan ke halaman
+                      Pengaturan adalah lewat menu samping. */}
+                  <Link
+                    href="/settings"
+                    onClick={() => setMenuTerbuka(false)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-white/5 transition-colors"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Pengaturan
+                  </Link>
+
                   <button
                     type="button"
                     onClick={keluar}

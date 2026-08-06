@@ -6,7 +6,12 @@ import { mapScanResult, mapScanResultList, mapDashboardStats } from './mappers';
 
 export const scanApi = {
   // Melakukan scan URL, email, atau file
-  async performScan(type: 'url' | 'email' | 'file', input: string, file?: File): Promise<ApiResponse<ScanResult>> {
+  async performScan(
+    type: 'url' | 'email' | 'file',
+    input: string,
+    file?: File,
+    mendalam?: boolean,
+  ): Promise<ApiResponse<ScanResult>> {
     try {
       let response;
 
@@ -21,9 +26,11 @@ export const scanApi = {
           },
         });
       } else {
-        // Field name berbeda tergantung tipe scan, sesuai schema backend
+        // Field name berbeda tergantung tipe scan, sesuai schema backend.
+        // 'mendalam' hanya dikirim untuk URL - backend email/file tidak
+        // mengenal field itu dan akan menolak permintaannya.
         const payload = type === 'url'
-          ? { url: input }
+          ? { url: input, mendalam: Boolean(mendalam) }
           : { email_content: input };
 
         response = await apiClient.post(`/scan/${type}`, payload);
@@ -137,52 +144,78 @@ export const dashboardApi = {
   },
 };
 
+/**
+ * Pengelolaan akun.
+ *
+ * Sebelumnya bagian ini memanggil /user/profile dan /user/notifications yang
+ * TIDAK PERNAH ADA di backend, jadi selalu menghasilkan 404. Tidak ada yang
+ * menyadarinya karena halaman Settings memang belum pernah memanggilnya.
+ * Sekarang diarahkan ke endpoint yang benar-benar ada.
+ */
 export const userApi = {
-  // Mendapatkan profil user
+  // Profil pemilik token
   async getProfile(): Promise<ApiResponse<any>> {
     try {
-      const response = await apiClient.get('/user/profile');
-      return {
-        success: true,
-        data: response.data,
-      };
+      const response = await apiClient.get('/auth/me');
+      return { success: true, data: response.data };
     } catch (error: any) {
-      return {
-        success: false,
-        error: error,
-      };
+      return { success: false, error: error };
     }
   },
 
-  // Update profil user
-  async updateProfile(data: { name?: string; email?: string }): Promise<ApiResponse<any>> {
+  // Ubah nama dan/atau email
+  async updateProfile(data: { nama?: string; email?: string }): Promise<ApiResponse<any>> {
     try {
-      const response = await apiClient.put('/user/profile', data);
-      return {
-        success: true,
-        data: response.data,
-      };
+      const response = await apiClient.put('/auth/me', data);
+      return { success: true, data: response.data };
     } catch (error: any) {
-      return {
-        success: false,
-        error: error,
-      };
+      return { success: false, error: error };
     }
   },
 
-  // Update preferensi notifikasi
-  async updateNotificationSettings(settings: { threatAlerts: boolean; scanComplete: boolean }): Promise<ApiResponse<any>> {
+  // Ganti sandi. Sandi lama wajib benar.
+  async changePassword(data: {
+    sandi_lama: string;
+    sandi_baru: string;
+  }): Promise<ApiResponse<void>> {
     try {
-      const response = await apiClient.put('/user/notifications', settings);
-      return {
-        success: true,
-        data: response.data,
-      };
+      await apiClient.put('/auth/me/password', data);
+      return { success: true };
     } catch (error: any) {
-      return {
-        success: false,
-        error: error,
-      };
+      return { success: false, error: error };
+    }
+  },
+};
+
+/**
+ * Koreksi pengguna saat sistem salah menilai.
+ *
+ * Setiap koreksi disimpan bersama fitur yang dipakai saat pemindaian, lalu
+ * jadi data latih tambahan pada pelatihan berikutnya. Inilah yang membuat
+ * sistem bisa membaik, bukan berhenti di kemampuan saat pertama dilatih.
+ */
+export const feedbackApi = {
+  async kirim(
+    scanId: string,
+    koreksi: 'safe' | 'suspicious' | 'malicious',
+  ): Promise<ApiResponse<any>> {
+    try {
+      const response = await apiClient.post('/feedback', {
+        scan_id: scanId,
+        koreksi,
+      });
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return { success: false, error: error };
+    }
+  },
+
+  async statistik(): Promise<ApiResponse<any>> {
+    try {
+      const response = await apiClient.get('/feedback/statistik');
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return { success: false, error: error };
     }
   },
 };

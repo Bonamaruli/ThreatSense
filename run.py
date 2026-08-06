@@ -17,7 +17,7 @@ di catatan progres ("Could not import module app.main").
 
 Ditambah lagi backend butuh DUA lokasi sekaligus:
     backend/   -> supaya `app.main` ketemu
-    root/      -> supaya `ml.predict` ketemu
+    root/      -> supaya `ml.scoring.url` ketemu
 
 Berkas ini mendaftarkan keduanya lebih dulu, baru menyalakan server. Jadi
 tidak peduli kamu berada di folder mana saat mengetik perintahnya.
@@ -103,7 +103,7 @@ def main():
     dipantau = [
         os.path.join(_BACKEND, "app"),
         os.path.join(_ROOT, "ml", "features"),
-        os.path.join(_ROOT, "ml", "predict.py"),
+        os.path.join(_ROOT, "ml", "scoring"),
     ]
 
     uvicorn.run(

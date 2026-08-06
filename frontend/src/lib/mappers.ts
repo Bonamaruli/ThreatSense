@@ -37,6 +37,8 @@ interface RawScanResponse {
   features_json?: Record<string, any>;
   shap_values?: Record<string, any>;
   explanations?: ScanExplanation[] | null;
+  evidence_summary?: { label: string; nilai: string }[] | null;
+  deep_scan?: boolean;
   created_at: string;
 }
 
@@ -79,6 +81,10 @@ export function mapScanResult(raw: RawScanResponse): ScanResult {
       // Alasan berbahasa manusia. Inilah yang sebaiknya ditampilkan ke
       // pengguna - jauh lebih berguna daripada sekadar angka persen.
       explanations: raw.explanations ?? [],
+      // Bukti hasil pemeriksaan mendalam (umur domain, negara server, dsb).
+      // Kosong untuk pemindaian cepat.
+      evidenceSummary: raw.evidence_summary ?? [],
+      deepScan: Boolean(raw.deep_scan),
     },
   };
 }

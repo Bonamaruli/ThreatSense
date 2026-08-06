@@ -48,16 +48,21 @@ export default function Sidebar() {
   return (
     <>
       <aside className={`fixed left-0 top-0 h-full bg-[#0d1117] border-r border-white/5 z-20 transition-all duration-300 ${collapsed ? 'w-20' : 'w-64'}`}>
-        {/* Logo */}
+        {/* Logo. Dulu <div> biasa sehingga diklik tidak terjadi apa-apa,
+            padahal logo di kiri atas lazimnya mengantar ke beranda. */}
         <div className="p-6 border-b border-white/5">
-          <div className="flex items-center gap-2">
+          <Link
+            href="/"
+            aria-label="Beranda ThreatSense"
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
             <Shield className="w-6 h-6 text-cyan-400 flex-shrink-0" />
             {!collapsed && (
               <span className="text-xl font-bold whitespace-nowrap">
                 Threat<span className="text-cyan-400">Sense</span>
               </span>
             )}
-          </div>
+          </Link>
         </div>
 
         {/* Scan Baru Button */}

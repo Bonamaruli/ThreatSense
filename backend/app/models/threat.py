@@ -20,7 +20,7 @@ Alembic (sudah ada di requirements.txt):
 """
 
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text
+    Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, text
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -60,6 +60,19 @@ class ScanHistory(Base):
     # resminya". Disimpan terpisah dari shap_values karena ini kalimat untuk
     # dibaca pengguna, bukan angka kontribusi fitur.
     explanations = Column(JSONB, nullable=True)
+    # Bukti hasil pemeriksaan mendalam (umur domain, negara server, dan
+    # seterusnya). Kosong untuk pemindaian cepat yang hanya membaca nama.
+    evidence_summary = Column(JSONB, nullable=True)
+    # server_default dinyatakan di sini, bukan hanya default=False.
+    #
+    # default=False saja hanya berlaku saat baris dibuat lewat ORM. Kalau ada
+    # yang menyisipkan baris lewat SQL langsung (skrip pemindahan data,
+    # perbaikan manual), kolom NOT NULL tanpa nilai bawaan akan menolak.
+    # Menyatakannya di sini juga membuat model dan database sepakat, sehingga
+    # Alembic tidak terus-menerus melaporkan perbedaan yang sebenarnya
+    # disengaja.
+    deep_scan = Column(Boolean, default=False, server_default=text("false"),
+                       nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     user = relationship("User", back_populates="scans")

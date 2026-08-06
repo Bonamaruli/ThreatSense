@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+# declarative_base pindah ke sqlalchemy.orm sejak SQLAlchemy 2.0.
+# Lokasi lamanya masih jalan tapi memunculkan peringatan setiap aplikasi start.
+from sqlalchemy.orm import declarative_base, sessionmaker
 from app.config import settings
 
 # Ambil DATABASE_URL dari config (dengan fallback ke default)

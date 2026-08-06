@@ -48,11 +48,15 @@ import pandas as pd
 from ml.features.url_features import (
     extract_url_features,
     deteksi_merek,
+    normalisasi_url,
     BRANDS,
 )
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-MODELS_DIR = os.path.join(_HERE, "models")
+# Naik satu tingkat: berkas ini ada di ml/scoring/, sedangkan berkas model
+# ada di ml/models/. Tanpa ".." jalurnya menunjuk ml/scoring/models yang
+# tidak pernah ada, dan modelnya gagal dimuat tanpa penjelasan.
+MODELS_DIR = os.path.abspath(os.path.join(_HERE, "..", "models"))
 
 METADATA_PATH = os.path.join(MODELS_DIR, "model_metadata.json")
 WHITELIST_PATH = os.path.join(MODELS_DIR, "whitelist_top100k.txt")
@@ -130,6 +134,29 @@ def _muat_model():
         model = pickle.load(f)
 
     return model, meta["feature_columns"], nama
+
+
+@lru_cache(maxsize=1)
+def _muat_model_mendalam():
+    """
+    Muat model yang dilatih pada bukti hasil membuka alamat.
+
+    Mengembalikan (None, None) kalau modelnya belum pernah dilatih, supaya
+    pemeriksaan mendalam tetap jalan memakai aturan saja. Sistem tidak boleh
+    mati hanya karena satu model belum ada.
+    """
+    path = os.path.join(MODELS_DIR, "deep_model.pkl")
+    meta_path = os.path.join(MODELS_DIR, "deep_model_metadata.json")
+    if not (os.path.exists(path) and os.path.exists(meta_path)):
+        return None, None
+    try:
+        with open(path, "rb") as f:
+            model = pickle.load(f)
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        return model, meta["feature_columns"]
+    except Exception:
+        return None, None
 
 
 @lru_cache(maxsize=1)
@@ -309,7 +336,8 @@ def evaluasi_aturan(url: str, f: dict) -> list[dict]:
 # FUNGSI UTAMA
 # ============================================================
 
-def predict_url(url: str) -> dict:
+def predict_url(url: str, mendalam: bool = False,
+                cache_domain: dict | None = None) -> dict:
     """
     Nilai sebuah URL.
 
@@ -321,15 +349,68 @@ def predict_url(url: str) -> dict:
         ml_score      : nilai mentah dari model (untuk transparansi)
         rules_fired   : aturan yang menyala
     """
-    fitur = extract_url_features(url)
+    # Alamat dirapikan SEKALI di sini, lalu bentuk rapi itu dipakai ketiga
+    # lapisan di bawah.
+    #
+    # Sebelumnya hanya ekstraksi fitur yang merapikan alamat, sedangkan
+    # aturan dan daftar putih tetap membaca alamat mentah. Akibatnya, begitu
+    # ada salah ketik seperti "https:google.com", daftar putih gagal mengenali
+    # domainnya dan diam-diam berhenti melindungi - google.com kehilangan
+    # status "domain populer" tanpa satu pun pesan error. Ketimpangan seperti
+    # ini tidak pernah membuat program berhenti, jadi sangat sulit disadari.
+    url_rapi = normalisasi_url(url)
+
+    fitur = extract_url_features(url_rapi)
 
     # --- Lapisan 3: model ML ---
     model, kolom, _ = _muat_model()
     X = pd.DataFrame([fitur])[kolom]
     ml_score = float(model.predict_proba(X)[0][1])
 
-    # --- Lapisan 2: aturan ---
-    aturan = evaluasi_aturan(url, fitur)
+    # --- Lapisan 2: aturan atas nama domain ---
+    aturan = evaluasi_aturan(url_rapi, fitur)
+
+    # --- Lapisan 4: BUKTI dari dalam alamatnya (opsional, lambat) ---
+    #
+    # Lapisan ini yang menjawab pertanyaan "bagaimana kalau domain resmi
+    # yang baru?". Tiga lapisan sebelumnya hanya menebak dari nama; di sini
+    # alamatnya benar-benar dibuka dan diperiksa isinya.
+    #
+    # Tidak dinyalakan otomatis karena butuh 2-8 detik, sementara analisis
+    # nama cuma 0,1 detik. Pemanggilnya yang memutuskan kapan bukti sepadan
+    # dengan waktunya.
+    bukti = None
+    ringkasan = []
+    skor_model_dalam = None
+
+    if mendalam:
+        from ml.scoring.deep_rules import evaluasi_bukti, ringkasan_bukti
+        from ml.features.live_features import analisis_mendalam
+
+        bukti = analisis_mendalam(url_rapi, cache_domain=cache_domain)
+        aturan = aturan + evaluasi_bukti(bukti)
+        ringkasan = ringkasan_bukti(bukti)
+
+        # --- Model yang dilatih pada BUKTI ---
+        #
+        # Berbeda dari model nama domain, model ini melihat umur, sertifikat,
+        # negara, dan isi halaman sekaligus. Di situlah ia bisa menangkap
+        # gabungan yang tidak terjangkau aturan sederhana - misalnya domain
+        # muda + kolom sandi + sertifikat yang baru dibuat.
+        model_dalam, kolom_dalam = _muat_model_mendalam()
+        if model_dalam is not None and bukti.get("halaman_terbaca"):
+            try:
+                from ml.features.deep_vector import vektor_dari_bukti
+
+                gabung = dict(fitur)
+                gabung.update(vektor_dari_bukti(bukti))
+                Xd = pd.DataFrame([gabung]).reindex(columns=kolom_dalam, fill_value=-1)
+                skor_model_dalam = float(model_dalam.predict_proba(Xd)[0][1])
+            except Exception:
+                # Model bermasalah tidak boleh membatalkan seluruh pemeriksaan.
+                # Aturan dan bukti yang sudah terkumpul tetap berguna.
+                skor_model_dalam = None
+
     skor_aturan = max((a["bobot"] for a in aturan), default=0.0)
 
     # --- Gabungkan ---
@@ -343,8 +424,20 @@ def predict_url(url: str) -> dict:
 
     skor = max(skor_aturan, sumbangan_ml)
 
+    # Sumbangan model bukti. Ambangnya lebih longgar daripada model nama
+    # domain karena model ini melihat bukti nyata, bukan menebak dari huruf -
+    # tapi tetap hanya didengar saat yakin, dengan alasan yang sama:
+    # tebakan ragu-ragu lebih sering menyesatkan daripada menolong.
+    if skor_model_dalam is not None:
+        if skor_model_dalam >= 0.90:
+            skor = max(skor, 0.85)
+        elif skor_model_dalam >= 0.75:
+            skor = max(skor, 0.60)
+        elif skor_model_dalam >= 0.60:
+            skor = max(skor, 0.45)
+
     # --- Lapisan 1: daftar putih ---
-    domain = _domain_terdaftar(url)
+    domain = _domain_terdaftar(url_rapi)
     di_daftar_putih = domain in _muat_daftar_putih()
     catatan_putih = None
 
@@ -386,6 +479,21 @@ def predict_url(url: str) -> dict:
             {"judul": "Domain populer", "alasan": catatan_putih, "bobot": 0.0}
         )
 
+    # Suara model bukti ditampilkan terpisah, bukan dilebur ke alasan lain.
+    # Pengguna berhak tahu mana kesimpulan dari aturan yang bisa dibaca, dan
+    # mana yang datang dari model - keduanya punya sifat kepercayaan berbeda.
+    if skor_model_dalam is not None and skor_model_dalam >= 0.60:
+        penjelasan.append({
+            "judul": "Penilaian model dari bukti",
+            "alasan": (
+                f"Setelah menimbang seluruh bukti sekaligus (umur domain, "
+                f"sertifikat, negara server, dan isi halaman), model menilai "
+                f"alamat ini berisiko {skor_model_dalam*100:.0f}%. Penilaian "
+                f"ini melengkapi aturan di atas, bukan menggantikannya."
+            ),
+            "bobot": round(skor_model_dalam, 3),
+        })
+
     if not aturan:
         if ml_score >= 0.6:
             penjelasan.append({
@@ -398,11 +506,28 @@ def predict_url(url: str) -> dict:
         elif not di_daftar_putih:
             penjelasan.append({
                 "judul": "Tidak ditemukan tanda bahaya",
-                "alasan": ("Tidak ada aturan yang dilanggar dan pola namanya "
-                           "wajar. Catatan: pemeriksaan ini hanya membaca nama "
-                           "domain, belum membuka isi halamannya."),
+                "alasan": (
+                    "Tidak ada aturan yang dilanggar dan pola namanya wajar."
+                    + ("" if mendalam else
+                       " Catatan: pemeriksaan ini baru membaca nama domain, "
+                       "belum membuka isi halamannya.")
+                ),
                 "bobot": 0.0,
             })
+
+    # Kegagalan saat memeriksa isi dilaporkan apa adanya, tidak disembunyikan.
+    # Halaman yang tidak bisa dibuka BUKAN berarti aman - bisa jadi sudah
+    # ditutup, atau memang menolak diperiksa. Pengguna berhak tahu bedanya
+    # antara "sudah diperiksa dan bersih" dan "tidak sempat diperiksa".
+    if bukti and bukti.get("kegagalan"):
+        penjelasan.append({
+            "judul": "Sebagian pemeriksaan tidak berhasil",
+            "alasan": ("Tidak semua bukti bisa diambil: "
+                       + "; ".join(bukti["kegagalan"])
+                       + ". Kesimpulan di atas disusun dari bukti yang berhasil "
+                         "dikumpulkan saja."),
+            "bobot": 0.0,
+        })
 
     return {
         "risk_score": skor,
@@ -412,6 +537,14 @@ def predict_url(url: str) -> dict:
         "ml_score": round(ml_score, 4),
         "rules_fired": [a["aturan"] for a in aturan],
         "whitelisted": di_daftar_putih,
+        # Hanya terisi saat mendalam=True
+        "deep_scan": bool(mendalam),
+        "evidence": bukti,
+        "evidence_summary": ringkasan,
+        # Nilai mentah model bukti, ditampilkan apa adanya demi transparansi.
+        # None berarti modelnya belum dilatih atau halamannya tidak terbaca.
+        "deep_ml_score": (round(skor_model_dalam, 4)
+                          if skor_model_dalam is not None else None),
     }
 
 

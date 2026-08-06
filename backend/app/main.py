@@ -7,14 +7,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.config import settings
 
-# PENTING: impor paket models SEBELUM create_all().
+# PENTING: impor paket models tetap diperlukan.
+# Alembic membandingkan database terhadap Base.metadata, dan model yang
+# tidak pernah diimpor tidak akan ada di sana - Alembic akan mengira
+# tabelnya harus DIHAPUS, lalu menghasilkan migrasi yang merusak data.
 # Sebelumnya baris ini tidak ada dan tabel tetap terbuat — tapi hanya
 # kebetulan, lewat rantai impor router -> scan_service -> models.threat.
 # Kalau suatu saat rantai itu berubah, tabel diam-diam tidak dibuat.
 # Impor eksplisit di sini membuatnya tidak lagi bergantung pada kebetulan.
 import app.models  # noqa: F401
 
-from .routers import auth, url_scan, email_scan, file_scan, dashboard
+from .routers import (
+    auth, url_scan, email_scan, file_scan, dashboard, scan_item, feedback,
+)
 
 # Nyalakan logging supaya logger.exception() di router benar-benar tercetak
 # di terminal. Tanpa ini, error internal tertelan tanpa jejak — sementara
@@ -30,11 +35,22 @@ logging.basicConfig(
 for _bising in ("filelock", "asyncio", "httpx", "httpcore", "urllib3", "matplotlib"):
     logging.getLogger(_bising).setLevel(logging.WARNING)
 
-# Buat tabel jika belum ada.
-# CATATAN: perintah ini HANYA membuat tabel yang belum ada. Dia tidak
-# mengubah struktur tabel yang sudah terlanjur ada. Untuk mengubah struktur,
-# pakai Alembic (lihat catatan di app/models/threat.py).
-Base.metadata.create_all(bind=engine)
+# Pembuatan tabel otomatis SENGAJA DIMATIKAN.
+#
+# create_all() hanya MEMBUAT tabel yang belum ada - dia tidak pernah
+# mengubah tabel yang sudah terlanjur ada. Akibatnya perubahan model hanya
+# terpasang di komputer yang databasenya masih kosong, sementara di komputer
+# lain tidak terjadi apa-apa, tanpa satu pun pesan error.
+#
+# Itu benar-benar terjadi di project ini dan baru ketahuan saat Alembic
+# dipasang: kolom input_value sudah jadi Text di model tapi masih
+# VARCHAR(1000) di database, dan TIGA indeks (scan_type, threat_label,
+# created_at) tidak pernah terbuat - sehingga setiap penyaringan riwayat
+# memindai seluruh tabel.
+#
+# Sekarang struktur tabel HANYA diubah lewat migrasi:
+#     backend\venv\Scripts\python.exe -m alembic upgrade head
+_ = (Base, engine)  # tetap diimpor karena dipakai bagian lain
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -48,7 +64,7 @@ async def lifespan(app: FastAPI):
     """
     log = logging.getLogger(__name__)
     try:
-        from ml.predict import _muat_model, _muat_daftar_putih
+        from ml.scoring.url import _muat_model, _muat_daftar_putih
         _, _, nama = _muat_model()
         jml = len(_muat_daftar_putih())
         log.info("Model '%s' dimuat, daftar putih %d domain.", nama, jml)
@@ -81,6 +97,12 @@ app.include_router(url_scan.router, prefix="/api/v1/scan")
 app.include_router(email_scan.router, prefix="/api/v1/scan")
 app.include_router(file_scan.router, prefix="/api/v1/scan")
 app.include_router(dashboard.router, prefix="/api/v1")
+app.include_router(feedback.router, prefix="/api/v1")
+
+# Didaftarkan PALING AKHIR. Router ini memuat rute dinamis /scan/{scan_id},
+# yang akan menelan /scan/url dan /scan/email kalau didaftarkan lebih dulu -
+# FastAPI mencocokkan rute sesuai urutan pendaftaran.
+app.include_router(scan_item.router, prefix="/api/v1")
 
 
 @app.get("/")

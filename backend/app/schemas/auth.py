@@ -38,3 +38,21 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+
+class UpdateProfilRequest(BaseModel):
+    """Kolom yang boleh diubah pengguna sendiri."""
+    nama: str | None = Field(None, min_length=2, max_length=120)
+    email: EmailStr | None = None
+
+
+class GantiSandiRequest(BaseModel):
+    """
+    Sandi lama WAJIB diisi.
+
+    Alasannya: kalau seseorang meninggalkan browsernya terbuka, siapa pun
+    yang lewat bisa mengganti sandi dan mengunci pemilik aslinya. Meminta
+    sandi lama memastikan yang mengubah memang pemiliknya.
+    """
+    sandi_lama: str = Field(..., min_length=1, max_length=200)
+    sandi_baru: str = Field(..., min_length=8, max_length=200)

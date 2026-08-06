@@ -1,15 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Shield, Link as LinkIcon, Mail, FileText, LayoutDashboard, History, Info, Search, User, Globe, File } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { ScanForm } from '@/components/ui/ScanForm'
 import { ScanResult } from '@/components/ui/ScanResult'
 import { useToast } from '@/components/ui/Toast'
 import { scanApi } from '@/lib/services'
-import { sedangMasuk } from '@/lib/auth'
+import { profilSaya, sedangMasuk } from '@/lib/auth'
 import type { ScanType, ScanResult as ScanResultType } from '@/types'
 
 export default function Home() {
@@ -18,9 +18,44 @@ export default function Home() {
   // Hasil scan terakhir. Sebelumnya hasilnya cuma masuk console.log sehingga
   // pengguna tidak pernah melihat apa pun selain notifikasi sekilas.
   const [hasil, setHasil] = useState<ScanResultType | null>(null)
+  const [namaAkun, setNamaAkun] = useState<string | null>(null)
+  const pathname = usePathname()
   const toast = useToast()
 
-  const handleScan = async (type: ScanType, value: string, file?: File) => {
+  // Nama akun ditampilkan di tombol kanan atas kalau sudah masuk.
+  // Halaman ini terbuka untuk umum, jadi kegagalan diabaikan diam-diam -
+  // pengunjung yang belum punya akun tetap melihat tulisan "Akun".
+  useEffect(() => {
+    if (!sedangMasuk()) return
+    let batal = false
+    profilSaya().then((u) => {
+      if (!batal && u) setNamaAkun(u.nama)
+    })
+    return () => {
+      batal = true
+    }
+  }, [])
+
+  const diBeranda = pathname === '/'
+
+  /**
+   * Gulir ke atas, dipakai saat logo diklik di halaman ini sendiri.
+   *
+   * Sebagian pengguna mematikan animasi lewat pengaturan sistem (dan browser
+   * mengabaikan 'smooth' bila begitu). Kalau pilihannya dipaksa 'smooth',
+   * tombolnya bisa terasa tidak berfungsi sama sekali bagi mereka. Karena itu
+   * pilihan geraknya menyesuaikan preferensi tersebut.
+   */
+  const gulirKeAtas = () => {
+    const kurangiGerak = window.matchMedia?.(
+      '(prefers-reduced-motion: reduce)'
+    ).matches
+    window.scrollTo({ top: 0, behavior: kurangiGerak ? 'auto' : 'smooth' })
+  }
+
+  const handleScan = async (
+    type: ScanType, value: string, file?: File, mendalam?: boolean,
+  ) => {
     // Scan sekarang butuh akun, karena hasilnya disimpan ke riwayat pemiliknya.
     // Dicegat di sini supaya pengguna mendapat penjelasan yang jelas, bukan
     // sekadar error 401 dari server yang membingungkan.
@@ -34,7 +69,7 @@ export default function Home() {
     setHasil(null)
 
     try {
-      const result = await scanApi.performScan(type, value, file)
+      const result = await scanApi.performScan(type, value, file, mendalam)
 
       if (result.success && result.data) {
         setHasil(result.data)
@@ -111,17 +146,40 @@ export default function Home() {
         transition={{ duration: 0.6, ease: "easeOut" }}
       >
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 group">
-            <motion.div
-              whileHover={{ rotate: 360 }}
-              transition={{ duration: 0.6 }}
+          {/*
+            Saat sedang DI beranda, logo bukan tautan melainkan tombol.
+
+            Alasannya: <Link href="/"> yang diklik dari halaman "/" tidak
+            melakukan apa-apa - Next.js melewati navigasi ke rute yang sedang
+            dibuka, sehingga onClick maupun onNavigate tidak pernah terpanggil
+            dan tidak ada cara mencegatnya. Memakai tombol biasa membuat
+            perilakunya pasti, tanpa bergantung pada cara kerja <Link> di
+            balik layar.
+          */}
+          {diBeranda ? (
+            <button
+              type="button"
+              onClick={gulirKeAtas}
+              aria-label="Kembali ke atas halaman"
+              className="flex items-center gap-2 group"
             >
-              <Shield className="w-6 h-6 text-cyan-400" />
-            </motion.div>
-            <span className="text-xl font-bold">
-              Threat<span className="text-cyan-400">Sense</span>
-            </span>
-          </Link>
+              <motion.div whileHover={{ rotate: 360 }} transition={{ duration: 0.6 }}>
+                <Shield className="w-6 h-6 text-cyan-400" />
+              </motion.div>
+              <span className="text-xl font-bold">
+                Threat<span className="text-cyan-400">Sense</span>
+              </span>
+            </button>
+          ) : (
+            <Link href="/" className="flex items-center gap-2 group">
+              <motion.div whileHover={{ rotate: 360 }} transition={{ duration: 0.6 }}>
+                <Shield className="w-6 h-6 text-cyan-400" />
+              </motion.div>
+              <span className="text-xl font-bold">
+                Threat<span className="text-cyan-400">Sense</span>
+              </span>
+            </Link>
+          )}
 
           <div className="hidden md:flex items-center gap-8">
             <Link href="/dashboard" className="text-gray-400 hover:text-white transition-colors relative group">
@@ -150,14 +208,24 @@ export default function Home() {
             </Link>
           </div>
 
-          <motion.button 
-            className="flex items-center gap-2 px-4 py-2 border border-white/20 rounded-lg hover:bg-white/5 transition-colors"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <User className="w-4 h-4" />
-            <span>Akun</span>
-          </motion.button>
+          {/*
+            Dulu ini <button> tanpa onClick sama sekali, jadi diklik tidak
+            terjadi apa-apa. Sekarang mengantar ke halaman Pengaturan.
+
+            Tujuannya SELALU /settings, tidak dibeda-bedakan berdasarkan
+            status masuk. Kalau belum masuk, RequireAuth di halaman itu yang
+            mengalihkan ke /login. Menaruh pemeriksaan di dua tempat membuat
+            keduanya bisa berbeda pendapat dan sulit ditelusuri kalau salah.
+          */}
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <Link
+              href="/settings"
+              className="flex items-center gap-2 px-4 py-2 border border-white/20 rounded-lg hover:bg-white/5 transition-colors"
+            >
+              <User className="w-4 h-4" />
+              <span>{namaAkun ?? 'Akun'}</span>
+            </Link>
+          </motion.div>
         </div>
       </motion.nav>
 

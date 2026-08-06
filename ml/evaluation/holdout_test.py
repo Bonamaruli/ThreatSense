@@ -45,7 +45,7 @@ _project_root = os.path.abspath(os.path.join(_current_file, "..", "..", ".."))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from ml.predict import predict_url  # noqa: E402
+from ml.scoring.url import predict_url  # noqa: E402
 
 MODELS_DIR = os.path.join(_project_root, "ml", "models")
 METADATA_PATH = os.path.join(MODELS_DIR, "model_metadata.json")

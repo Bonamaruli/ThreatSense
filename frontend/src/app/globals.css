@@ -7,10 +7,31 @@
   --foreground: #ffffff;
 }
 
+html,
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /*
+    Matikan efek "melayang" saat gulir sudah mentok.
+    Secara bawaan, browser membiarkan halaman tertarik melewati ujung lalu
+    memantul balik. Di halaman berlatar gelap seperti ini, celah yang muncul
+    sesaat terlihat seperti seluruh isi halaman ikut bergeser dari tempatnya.
+    'none' menghentikan pantulan itu sekaligus mencegah gerakan gulir
+    diteruskan ke elemen di belakangnya.
+  */
+  overscroll-behavior: none;
+}
+
+/*
+  Latar dipasang juga di html, bukan cuma body.
+  Kalau hanya di body, area di luar jangkauan body (yang tersingkap sesaat
+  saat gulir memantul, atau saat isi halaman lebih pendek dari layar) akan
+  tampil putih dan menyilaukan di tema gelap.
+*/
+html {
+  background: var(--background);
 }
 
 * {

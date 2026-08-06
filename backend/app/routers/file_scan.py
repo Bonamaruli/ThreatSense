@@ -79,6 +79,12 @@ async def scan_file(
     try:
         req = FileScanRequest(filename_hint=filename_hint)
         return process_file_scan(db, filename, file_bytes, req, user_id=user.id)
+
+    except HTTPException:
+        # Penolakan yang disengaja diteruskan apa adanya, jangan diubah
+        # jadi 500 - lihat penjelasan lengkapnya di url_scan.py.
+        raise
+
     except Exception:
         # Pesan asli hanya masuk log server, tidak dikirim ke klien —
         # detail internal (path folder, struktur query) bisa dipakai

@@ -2,10 +2,15 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Shield, Link, Mail, File, Loader2 } from 'lucide-react';
+import { Shield, Link, Mail, File, Loader2, Search } from 'lucide-react';
 
 interface ScanFormProps {
-  onScan: (type: 'url' | 'email' | 'file', value: string, file?: File) => void;
+  onScan: (
+    type: 'url' | 'email' | 'file',
+    value: string,
+    file?: File,
+    mendalam?: boolean,
+  ) => void;
   loading?: boolean;
 }
 
@@ -13,11 +18,15 @@ export function ScanForm({ onScan, loading = false }: ScanFormProps) {
   const [activeTab, setActiveTab] = React.useState<'url' | 'email' | 'file'>('url');
   const [inputValue, setInputValue] = React.useState('');
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
+  // Pemeriksaan mendalam benar-benar MEMBUKA alamatnya untuk mengambil bukti.
+  // Bawaannya mati karena butuh 3-13 detik, dan pengguna berhak memilih
+  // sendiri kapan menunggu selama itu sepadan.
+  const [mendalam, setMendalam] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (loading) return;
 
     if (activeTab === 'file') {
@@ -26,7 +35,8 @@ export function ScanForm({ onScan, loading = false }: ScanFormProps) {
       }
     } else {
       if (inputValue.trim()) {
-        onScan(activeTab, inputValue.trim());
+        onScan(activeTab, inputValue.trim(), undefined,
+               activeTab === 'url' ? mendalam : false);
       }
     }
   };
@@ -206,7 +216,50 @@ export function ScanForm({ onScan, loading = false }: ScanFormProps) {
         />
       )}
 
-      <motion.p 
+      {/* Sakelar pemeriksaan mendalam - hanya untuk URL.
+          Email dan file tidak punya "alamat untuk dibuka", jadi pilihan ini
+          tidak berarti apa-apa di sana dan sengaja disembunyikan daripada
+          ditampilkan tapi tidak berfungsi. */}
+      {activeTab === 'url' && (
+        <motion.div
+          className="mt-5 flex items-start justify-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          <label className="flex items-start gap-3 cursor-pointer max-w-xl">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={mendalam}
+              aria-label="Pemeriksaan mendalam"
+              onClick={() => setMendalam((v) => !v)}
+              className={`mt-0.5 w-11 h-6 rounded-full p-0.5 flex-shrink-0 transition-colors ${
+                mendalam ? 'bg-cyan-500' : 'bg-white/10'
+              }`}
+            >
+              <motion.div
+                className="w-5 h-5 bg-white rounded-full"
+                animate={{ x: mendalam ? 20 : 0 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+              />
+            </button>
+
+            <span className="text-left">
+              <span className="flex items-center gap-1.5 text-sm font-medium text-gray-200">
+                <Search className="w-3.5 h-3.5 text-cyan-400" />
+                Pemeriksaan mendalam
+              </span>
+              <span className="block text-xs text-gray-500 mt-0.5 leading-relaxed">
+                {mendalam
+                  ? 'Alamatnya akan dibuka untuk mengambil bukti: umur domain, negara server, sertifikat, dan isi halaman. Butuh 3-13 detik.'
+                  : 'Hanya membaca nama domain (cepat, di bawah 1 detik). Nyalakan untuk bukti yang lebih meyakinkan.'}
+              </span>
+            </span>
+          </label>
+        </motion.div>
+      )}
+
+      <motion.p
         className="text-center text-sm text-gray-500 mt-4"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

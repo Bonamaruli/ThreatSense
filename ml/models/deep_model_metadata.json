@@ -1,0 +1,175 @@
+{
+  "feature_columns": [
+    "hostname_length",
+    "domain_length",
+    "tld_length",
+    "subdomain_count",
+    "domain_entropy",
+    "hostname_entropy",
+    "count_digit",
+    "digit_ratio",
+    "count_hyphen",
+    "hyphen_ratio",
+    "vowel_ratio",
+    "longest_consonant_run",
+    "max_char_repeat",
+    "digit_letter_transitions",
+    "token_count",
+    "avg_token_length",
+    "max_token_length",
+    "has_ip_address",
+    "has_port",
+    "has_punycode",
+    "is_shortener",
+    "suspicious_tld",
+    "common_tld",
+    "contains_brand",
+    "brand_impersonation",
+    "brand_edit_distance",
+    "phishing_keyword_count",
+    "has_phishing_keyword",
+    "judol_keyword_count",
+    "has_judol_keyword",
+    "judol_strong_count",
+    "d_ada_data_whois",
+    "d_umur_hari",
+    "d_umur_dibawah_7hari",
+    "d_umur_dibawah_30hari",
+    "d_umur_dibawah_180hari",
+    "d_umur_diatas_3tahun",
+    "d_negara_diketahui",
+    "d_negara_US",
+    "d_negara_ID",
+    "d_negara_SG",
+    "d_negara_RU",
+    "d_negara_CN",
+    "d_negara_NL",
+    "d_negara_DE",
+    "d_negara_FR",
+    "d_negara_GB",
+    "d_negara_IN",
+    "d_negara_lain",
+    "d_punya_ip",
+    "d_ssl_diperiksa",
+    "d_ssl_ada",
+    "d_ssl_cocok",
+    "d_ssl_umur_hari",
+    "d_ssl_masih_baru",
+    "d_bisa_dibuka",
+    "d_status_200",
+    "d_status_4xx",
+    "d_jumlah_pengalihan",
+    "d_pindah_domain",
+    "d_halaman_terbaca",
+    "d_ada_kolom_sandi",
+    "d_jumlah_kolom_sandi",
+    "d_jumlah_form",
+    "d_form_ke_domain_lain",
+    "d_kata_kredensial",
+    "d_kata_judi",
+    "d_kata_judi_kuat",
+    "d_sebut_merek_lain",
+    "d_iframe_tersembunyi",
+    "d_js_teracak",
+    "d_ukuran_halaman_kb",
+    "d_panjang_judul",
+    "d_punya_judul",
+    "d_sandi_dan_domain_muda",
+    "d_sandi_dan_sebut_merek",
+    "d_sandi_tanpa_ssl",
+    "d_sandi_dan_form_asing"
+  ],
+  "metrics_cv": {
+    "accuracy": 0.9319526627218935,
+    "precision": 0.937125748502994,
+    "recall": 0.9260355029585798,
+    "f1_score": 0.9315476190476191,
+    "roc_auc": 0.9734865725989986
+  },
+  "kalibrasi": {
+    "0.5": {
+      "jumlah": 334,
+      "ketepatan": 0.937125748502994
+    },
+    "0.7": {
+      "jumlah": 310,
+      "ketepatan": 0.9548387096774194
+    },
+    "0.8": {
+      "jumlah": 288,
+      "ketepatan": 0.96875
+    },
+    "0.9": {
+      "jumlah": 264,
+      "ketepatan": 0.9810606060606061
+    },
+    "0.95": {
+      "jumlah": 236,
+      "ketepatan": 0.9872881355932204
+    }
+  },
+  "jumlah_data": 676,
+  "fitur_terpenting": [
+    {
+      "nama": "d_pindah_domain",
+      "bobot": 0.09232520312070847
+    },
+    {
+      "nama": "hostname_entropy",
+      "bobot": 0.08287787437438965
+    },
+    {
+      "nama": "d_umur_diatas_3tahun",
+      "bobot": 0.0794028788805008
+    },
+    {
+      "nama": "d_kata_judi",
+      "bobot": 0.07450102269649506
+    },
+    {
+      "nama": "brand_edit_distance",
+      "bobot": 0.0565909817814827
+    },
+    {
+      "nama": "contains_brand",
+      "bobot": 0.05557830631732941
+    },
+    {
+      "nama": "d_status_200",
+      "bobot": 0.04840879514813423
+    },
+    {
+      "nama": "hostname_length",
+      "bobot": 0.046518247574567795
+    },
+    {
+      "nama": "d_jumlah_pengalihan",
+      "bobot": 0.03713465481996536
+    },
+    {
+      "nama": "tld_length",
+      "bobot": 0.029651571065187454
+    },
+    {
+      "nama": "d_panjang_judul",
+      "bobot": 0.029629770666360855
+    },
+    {
+      "nama": "d_status_4xx",
+      "bobot": 0.027822179719805717
+    },
+    {
+      "nama": "d_umur_hari",
+      "bobot": 0.026871461421251297
+    },
+    {
+      "nama": "d_jumlah_form",
+      "bobot": 0.02323901280760765
+    },
+    {
+      "nama": "d_ukuran_halaman_kb",
+      "bobot": 0.0206895899027586
+    }
+  ],
+  "dilatih_pada": "2026-08-06T15:35:01.493261"
+}

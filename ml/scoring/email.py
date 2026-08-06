@@ -31,7 +31,7 @@ yang rapi masih bisa lolos. Ini ditulis terus terang, bukan disembunyikan.
 """
 
 from ml.features.email_features import extract_email_features
-from ml.predict import predict_url
+from ml.scoring.url import predict_url
 
 # Batas nilai, disamakan dengan mesin URL supaya artinya konsisten
 AMBANG_BERBAHAYA = 0.70

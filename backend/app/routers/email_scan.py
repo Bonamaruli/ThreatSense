@@ -21,6 +21,12 @@ def scan_email(
 ):
     try:
         return process_email_scan(db, req, user_id=user.id)
+
+    except HTTPException:
+        # Penolakan yang disengaja diteruskan apa adanya, jangan diubah
+        # jadi 500 - lihat penjelasan lengkapnya di url_scan.py.
+        raise
+
     except Exception:
         # Isi email TIDAK ikut di-log — itu data pribadi milik pengguna.
         # Cukup catat panjangnya untuk keperluan debugging.

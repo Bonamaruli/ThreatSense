@@ -1,426 +1,425 @@
 'use client'
 
-import RequireAuth from '@/components/RequireAuth'
-
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { 
-  User, 
-  Bell, 
-  Moon, 
-  Sun,
+import {
+  User as UserIcon,
+  Lock,
+  Sliders,
   Save,
-  Camera,
-  ChevronRight,
-  HelpCircle,
-  Trash2,
-  Shield
+  LogOut,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
 } from 'lucide-react'
+
+import RequireAuth from '@/components/RequireAuth'
 import Sidebar from '@/components/Sidebar'
 import Header from '@/components/Header'
+import { userApi } from '@/lib/services'
+import { keluar } from '@/lib/auth'
 
-type SettingsTab = 'profil' | 'notifikasi' | 'tampilan'
-type Theme = 'gelap' | 'terang'
+type Tab = 'profil' | 'keamanan' | 'preferensi'
+
+/** Kunci penyimpanan preferensi tampilan di browser. */
+const KUNCI_PREFERENSI = 'threatsense_preferensi'
 
 function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('profil')
+  const [tab, setTab] = useState<Tab>('profil')
+
+  // --- Profil ---
+  const [nama, setNama] = useState('')
+  const [email, setEmail] = useState('')
+  const [memuatProfil, setMemuatProfil] = useState(true)
+  const [menyimpanProfil, setMenyimpanProfil] = useState(false)
+
+  // --- Ganti sandi ---
+  const [sandiLama, setSandiLama] = useState('')
+  const [sandiBaru, setSandiBaru] = useState('')
+  const [sandiUlang, setSandiUlang] = useState('')
+  const [menyimpanSandi, setMenyimpanSandi] = useState(false)
+
+  // --- Preferensi (hanya tersimpan di browser) ---
   const [notifAncaman, setNotifAncaman] = useState(true)
   const [notifScan, setNotifScan] = useState(true)
-  const [theme, setTheme] = useState<Theme>('gelap')
-  const [nama, setNama] = useState('John Doe')
-  const [email, setEmail] = useState('john@example.com')
 
-  const menuItems = [
-    { 
-      id: 'profil' as SettingsTab, 
-      label: 'Profil', 
-      desc: 'Nama, email, informasi akun', 
-      icon: User 
-    },
-    { 
-      id: 'notifikasi' as SettingsTab, 
-      label: 'Notifikasi', 
-      desc: 'Atur preferensi notifikasi', 
-      icon: Bell 
-    },
-    { 
-      id: 'tampilan' as SettingsTab, 
-      label: 'Tampilan', 
-      desc: 'Tema dan antarmuka', 
-      icon: Moon 
-    },
-  ]
+  const [kabar, setKabar] = useState<{ tipe: 'ok' | 'salah'; teks: string } | null>(null)
 
-  const pageVariants = {
-    initial: { opacity: 0, x: 20 },
-    animate: { opacity: 1, x: 0 },
-    exit: { opacity: 0, x: -20 }
+  // Profil diambil dari server, bukan ditulis mati.
+  // Sebelumnya halaman ini menampilkan "John Doe" untuk semua orang, padahal
+  // header di atasnya sudah menampilkan nama akun yang sebenarnya.
+  useEffect(() => {
+    let batal = false
+    userApi
+      .getProfile()
+      .then((r) => {
+        if (batal) return
+        if (r.success && r.data) {
+          setNama(r.data.nama ?? '')
+          setEmail(r.data.email ?? '')
+        } else {
+          setKabar({ tipe: 'salah', teks: r.error?.message ?? 'Gagal memuat profil.' })
+        }
+      })
+      .finally(() => !batal && setMemuatProfil(false))
+
+    // Preferensi tampilan dibaca dari browser
+    try {
+      const tersimpan = localStorage.getItem(KUNCI_PREFERENSI)
+      if (tersimpan) {
+        const p = JSON.parse(tersimpan)
+        if (typeof p.notifAncaman === 'boolean') setNotifAncaman(p.notifAncaman)
+        if (typeof p.notifScan === 'boolean') setNotifScan(p.notifScan)
+      }
+    } catch {
+      // Nilai rusak diabaikan, pakai bawaan saja
+    }
+
+    return () => {
+      batal = true
+    }
+  }, [])
+
+  // Pesan hilang sendiri supaya tidak menumpuk di layar
+  useEffect(() => {
+    if (!kabar) return
+    const t = setTimeout(() => setKabar(null), 5000)
+    return () => clearTimeout(t)
+  }, [kabar])
+
+  const simpanProfil = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setMenyimpanProfil(true)
+    setKabar(null)
+
+    const r = await userApi.updateProfile({ nama: nama.trim(), email: email.trim() })
+    if (r.success) {
+      setKabar({ tipe: 'ok', teks: 'Profil tersimpan.' })
+    } else {
+      setKabar({ tipe: 'salah', teks: r.error?.message ?? 'Gagal menyimpan profil.' })
+    }
+    setMenyimpanProfil(false)
   }
 
+  const simpanSandi = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    // Diperiksa di sini supaya pengguna langsung tahu, tanpa perlu menunggu
+    // jawaban server. Pemeriksaan sesungguhnya tetap ada di backend.
+    if (sandiBaru !== sandiUlang) {
+      setKabar({ tipe: 'salah', teks: 'Ketikan sandi baru tidak sama.' })
+      return
+    }
+
+    setMenyimpanSandi(true)
+    setKabar(null)
+
+    const r = await userApi.changePassword({
+      sandi_lama: sandiLama,
+      sandi_baru: sandiBaru,
+    })
+
+    if (r.success) {
+      setKabar({ tipe: 'ok', teks: 'Sandi berhasil diganti.' })
+      setSandiLama('')
+      setSandiBaru('')
+      setSandiUlang('')
+    } else {
+      setKabar({ tipe: 'salah', teks: r.error?.message ?? 'Gagal mengganti sandi.' })
+    }
+    setMenyimpanSandi(false)
+  }
+
+  const simpanPreferensi = (baru: { notifAncaman?: boolean; notifScan?: boolean }) => {
+    const nilai = { notifAncaman, notifScan, ...baru }
+    setNotifAncaman(nilai.notifAncaman)
+    setNotifScan(nilai.notifScan)
+    localStorage.setItem(KUNCI_PREFERENSI, JSON.stringify(nilai))
+  }
+
+  const menu = [
+    { id: 'profil' as Tab, label: 'Profil', desc: 'Nama dan email', icon: UserIcon },
+    { id: 'keamanan' as Tab, label: 'Keamanan', desc: 'Sandi dan sesi', icon: Lock },
+    { id: 'preferensi' as Tab, label: 'Preferensi', desc: 'Notifikasi', icon: Sliders },
+  ]
+
   return (
-    <motion.div 
-      className="min-h-screen bg-[#0a0a0f] text-white flex"
+    <motion.div
+      className="min-h-screen bg-[#0a0a0f] text-white"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       transition={{ duration: 0.4 }}
     >
-      {/* Main Sidebar */}
       <Sidebar />
-      
-      {/* Settings Sidebar (Nested) */}
-      <aside className="w-80 bg-[#0d1117] border-r border-white/5 flex flex-col fixed left-64 top-0 h-full z-10">
-        {/* User Profile Card */}
-        <div className="p-6 border-b border-white/5">
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center">
-                <span className="text-lg font-bold text-white">JD</span>
-              </div>
-              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-[#0d1117] rounded-full" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-white">John Doe</h3>
-              <p className="text-sm text-gray-400">john@example.com</p>
-            </div>
-          </div>
-        </div>
 
-        {/* Settings Menu */}
-        <div className="flex-1 p-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 mb-3">
-            Pengaturan
-          </p>
-          <nav className="space-y-1">
-            {menuItems.map((item) => {
-              const Icon = item.icon
-              const isActive = activeTab === item.id
-              return (
-                <motion.button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-left ${
-                    isActive
-                      ? 'bg-cyan-500/10 border border-cyan-500/20'
-                      : 'hover:bg-white/5 border border-transparent'
-                  }`}
-                  whileHover={{ x: 4 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                    isActive ? 'bg-cyan-500/20' : 'bg-white/5'
-                  }`}>
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-cyan-400' : 'text-gray-400'}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium ${isActive ? 'text-cyan-400' : 'text-white'}`}>
-                      {item.label}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">{item.desc}</p>
-                  </div>
-                  <ChevronRight className={`w-4 h-4 flex-shrink-0 ${
-                    isActive ? 'text-cyan-400' : 'text-gray-600'
-                  }`} />
-                </motion.button>
-              )
-            })}
-          </nav>
-        </div>
-
-        {/* Help Button */}
-        <div className="p-4">
-          <button className="w-full flex items-center gap-3 px-3 py-2 text-gray-400 hover:text-white transition-colors">
-            <span className="text-xs">Ciutkan</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 ml-[calc(16rem+20rem)]">
-        <Header title="Pengaturan" subtitle="Jumat, 19 Juni 2026" />
+      <main className="ml-64">
+        <Header title="Pengaturan" subtitle="Kelola akun kamu" />
 
         <div className="p-8 max-w-4xl">
-          <AnimatePresence mode="wait">
-            {/* PROFIL TAB */}
-            {activeTab === 'profil' && (
+          <AnimatePresence>
+            {kabar && (
               <motion.div
-                key="profil"
-                variants={pageVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                transition={{ duration: 0.3 }}
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className={`mb-6 flex items-start gap-2 rounded-lg border p-3 text-sm ${
+                  kabar.tipe === 'ok'
+                    ? 'border-green-500/20 bg-green-500/10 text-green-400'
+                    : 'border-red-500/20 bg-red-500/10 text-red-400'
+                }`}
               >
-                <div className="mb-8">
-                  <h1 className="text-3xl font-bold mb-2">Profil</h1>
-                  <div className="w-12 h-1 bg-cyan-400 rounded-full" />
-                </div>
-
-                {/* Foto Profil */}
-                <div className="mb-8">
-                  <h2 className="text-xl font-semibold mb-4">Foto Profil</h2>
-                  <div className="flex items-center gap-6">
-                    <div className="relative group">
-                      <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-                        <span className="text-3xl font-bold text-white">JD</span>
-                      </div>
-                      <motion.button
-                        className="absolute -bottom-2 -right-2 w-9 h-9 bg-[#1a1f2e] border border-white/10 rounded-lg flex items-center justify-center hover:bg-white/10 transition-colors"
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                      >
-                        <Camera className="w-4 h-4 text-gray-300" />
-                      </motion.button>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-gray-300 mb-1">
-                        Inisial nama Anda ditampilkan secara otomatis.
-                      </p>
-                      <p className="text-gray-400">
-                        Unggah foto untuk menggantinya.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t border-white/5 my-8" />
-
-                {/* Informasi Akun */}
-                <div className="mb-8">
-                  <h2 className="text-xl font-semibold mb-6">Informasi Akun</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                        Nama Lengkap
-                      </label>
-                      <input
-                        type="text"
-                        value={nama}
-                        onChange={(e) => setNama(e.target.value)}
-                        className="w-full bg-[#0d1117] border border-white/10 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500/50 transition-colors"
-                      />
-                      <p className="text-xs text-gray-500 mt-2">
-                        Nama yang ditampilkan di seluruh aplikasi
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                        Alamat Email
-                      </label>
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full bg-[#0d1117] border border-white/10 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500/50 transition-colors"
-                      />
-                      <p className="text-xs text-gray-500 mt-2">
-                        Digunakan untuk notifikasi dan login
-                      </p>
-                    </div>
-                  </div>
-
-                  <motion.button
-                    className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-cyan-600 rounded-lg font-semibold hover:shadow-lg hover:shadow-cyan-500/50 transition-all flex items-center gap-2"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    <Save className="w-4 h-4" />
-                    Simpan Perubahan
-                  </motion.button>
-                </div>
-
-                <div className="border-t border-white/5 my-8" />
-
-                {/* Zona Berbahaya */}
-                <div>
-                  <h2 className="text-xl font-semibold mb-2 text-red-400">Zona Berbahaya</h2>
-                  <p className="text-gray-400 mb-4">
-                    Tindakan ini bersifat permanen dan tidak dapat dibatalkan.
-                  </p>
-                  <motion.button
-                    className="px-6 py-3 border border-red-500/50 text-red-400 rounded-lg font-semibold hover:bg-red-500/10 transition-all flex items-center gap-2"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Hapus Akun
-                  </motion.button>
-                </div>
-              </motion.div>
-            )}
-
-            {/* NOTIFIKASI TAB */}
-            {activeTab === 'notifikasi' && (
-              <motion.div
-                key="notifikasi"
-                variants={pageVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                transition={{ duration: 0.3 }}
-              >
-                <div className="mb-8">
-                  <h1 className="text-3xl font-bold mb-2">Notifikasi</h1>
-                  <div className="w-12 h-1 bg-cyan-400 rounded-full" />
-                </div>
-
-                <div className="mb-6">
-                  <h2 className="text-xl font-semibold mb-2">Preferensi Notifikasi</h2>
-                  <p className="text-gray-400">
-                    Pilih jenis notifikasi yang ingin Anda terima dari ThreatSense.
-                  </p>
-                </div>
-
-                <div className="bg-[#0d1117] border border-white/5 rounded-xl overflow-hidden">
-                  {/* Peringatan Ancaman */}
-                  <div className="flex items-center justify-between p-6 border-b border-white/5">
-                    <div>
-                      <h3 className="font-semibold mb-1">Peringatan Ancaman</h3>
-                      <p className="text-sm text-gray-400">
-                        Beri tahu saat URL, email, atau file berisiko tinggi terdeteksi
-                      </p>
-                    </div>
-                    <ToggleSwitch 
-                      checked={notifAncaman} 
-                      onChange={setNotifAncaman} 
-                    />
-                  </div>
-
-                  {/* Scan Selesai */}
-                  <div className="flex items-center justify-between p-6">
-                    <div>
-                      <h3 className="font-semibold mb-1">Scan Selesai</h3>
-                      <p className="text-sm text-gray-400">
-                        Beri tahu ketika setiap proses scan selesai diproses
-                      </p>
-                    </div>
-                    <ToggleSwitch 
-                      checked={notifScan} 
-                      onChange={setNotifScan} 
-                    />
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {/* TAMPILAN TAB */}
-            {activeTab === 'tampilan' && (
-              <motion.div
-                key="tampilan"
-                variants={pageVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                transition={{ duration: 0.3 }}
-              >
-                <div className="mb-8">
-                  <h1 className="text-3xl font-bold mb-2">Tampilan</h1>
-                  <div className="w-12 h-1 bg-cyan-400 rounded-full" />
-                </div>
-
-                <div className="mb-6">
-                  <h2 className="text-xl font-semibold mb-2">Tema Antarmuka</h2>
-                  <p className="text-gray-400">
-                    Pilih tema tampilan yang nyaman untuk Anda.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Tema Gelap */}
-                  <motion.button
-                    onClick={() => setTheme('gelap')}
-                    className={`relative p-8 rounded-xl border-2 transition-all text-center ${
-                      theme === 'gelap'
-                        ? 'border-cyan-500 bg-cyan-500/5'
-                        : 'border-white/10 bg-[#0d1117] hover:border-white/20'
-                    }`}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    <div className={`w-14 h-14 rounded-xl mx-auto mb-4 flex items-center justify-center ${
-                      theme === 'gelap' ? 'bg-cyan-500/20' : 'bg-white/5'
-                    }`}>
-                      <Moon className={`w-7 h-7 ${theme === 'gelap' ? 'text-cyan-400' : 'text-gray-400'}`} />
-                    </div>
-                    <p className={`font-semibold mb-1 ${theme === 'gelap' ? 'text-cyan-400' : 'text-white'}`}>
-                      Gelap
-                    </p>
-                    <p className="text-sm text-gray-500 mb-3">Default</p>
-                    {theme === 'gelap' && (
-                      <motion.span 
-                        className="inline-flex items-center gap-1 px-3 py-1 bg-cyan-500/20 text-cyan-400 text-xs rounded-full font-medium"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                      >
-                        ✓ Aktif
-                      </motion.span>
-                    )}
-                  </motion.button>
-
-                  {/* Tema Terang */}
-                  <motion.button
-                    onClick={() => setTheme('terang')}
-                    className={`relative p-8 rounded-xl border-2 transition-all text-center ${
-                      theme === 'terang'
-                        ? 'border-cyan-500 bg-cyan-500/5'
-                        : 'border-white/10 bg-[#0d1117] hover:border-white/20'
-                    }`}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    <div className={`w-14 h-14 rounded-xl mx-auto mb-4 flex items-center justify-center ${
-                      theme === 'terang' ? 'bg-cyan-500/20' : 'bg-white/5'
-                    }`}>
-                      <Sun className={`w-7 h-7 ${theme === 'terang' ? 'text-cyan-400' : 'text-gray-400'}`} />
-                    </div>
-                    <p className={`font-semibold mb-1 ${theme === 'terang' ? 'text-cyan-400' : 'text-white'}`}>
-                      Terang
-                    </p>
-                    <p className="text-sm text-gray-500 mb-3">Mode siang</p>
-                    {theme === 'terang' && (
-                      <motion.span 
-                        className="inline-flex items-center gap-1 px-3 py-1 bg-cyan-500/20 text-cyan-400 text-xs rounded-full font-medium"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                      >
-                        ✓ Aktif
-                      </motion.span>
-                    )}
-                  </motion.button>
-                </div>
+                {kabar.tipe === 'ok' ? (
+                  <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                )}
+                <span>{kabar.teks}</span>
               </motion.div>
             )}
           </AnimatePresence>
+
+          <div className="grid grid-cols-1 md:grid-cols-[16rem_1fr] gap-6">
+            {/* Menu samping */}
+            <nav className="space-y-1">
+              {menu.map((m) => {
+                const Ikon = m.icon
+                const aktif = tab === m.id
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setTab(m.id)}
+                    className={`w-full text-left flex items-start gap-3 rounded-lg p-3 transition-colors ${
+                      aktif
+                        ? 'bg-cyan-500/10 border border-cyan-500/30'
+                        : 'border border-transparent hover:bg-white/5'
+                    }`}
+                  >
+                    <Ikon
+                      className={`w-4 h-4 mt-0.5 ${
+                        aktif ? 'text-cyan-400' : 'text-gray-500'
+                      }`}
+                    />
+                    <span>
+                      <span className="block text-sm font-medium">{m.label}</span>
+                      <span className="block text-xs text-gray-500">{m.desc}</span>
+                    </span>
+                  </button>
+                )
+              })}
+            </nav>
+
+            {/* Isi */}
+            <div className="bg-[#0d1117] border border-white/5 rounded-xl p-6">
+              {tab === 'profil' && (
+                <form onSubmit={simpanProfil} className="space-y-5">
+                  <h3 className="font-semibold">Profil</h3>
+
+                  {memuatProfil ? (
+                    <div className="flex justify-center py-10">
+                      <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1.5">
+                          Nama lengkap
+                        </label>
+                        <input
+                          type="text"
+                          value={nama}
+                          onChange={(e) => setNama(e.target.value)}
+                          minLength={2}
+                          required
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/50"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1.5">Email</label>
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          required
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/50"
+                        />
+                        <p className="text-xs text-gray-600 mt-1.5">
+                          Email dipakai untuk masuk, jadi pastikan masih kamu ingat.
+                        </p>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={menyimpanProfil}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 rounded-lg text-sm font-medium hover:bg-cyan-500/30 transition-colors disabled:opacity-50"
+                      >
+                        {menyimpanProfil ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
+                        Simpan Perubahan
+                      </button>
+                    </>
+                  )}
+                </form>
+              )}
+
+              {tab === 'keamanan' && (
+                <div className="space-y-8">
+                  <form onSubmit={simpanSandi} className="space-y-5">
+                    <h3 className="font-semibold">Ganti Sandi</h3>
+
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1.5">
+                        Sandi sekarang
+                      </label>
+                      <input
+                        type="password"
+                        value={sandiLama}
+                        onChange={(e) => setSandiLama(e.target.value)}
+                        required
+                        autoComplete="current-password"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1.5">
+                        Sandi baru (minimal 8 karakter)
+                      </label>
+                      <input
+                        type="password"
+                        value={sandiBaru}
+                        onChange={(e) => setSandiBaru(e.target.value)}
+                        minLength={8}
+                        required
+                        autoComplete="new-password"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1.5">
+                        Ulangi sandi baru
+                      </label>
+                      <input
+                        type="password"
+                        value={sandiUlang}
+                        onChange={(e) => setSandiUlang(e.target.value)}
+                        minLength={8}
+                        required
+                        autoComplete="new-password"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/50"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={menyimpanSandi}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 rounded-lg text-sm font-medium hover:bg-cyan-500/30 transition-colors disabled:opacity-50"
+                    >
+                      {menyimpanSandi ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Lock className="w-4 h-4" />
+                      )}
+                      Ganti Sandi
+                    </button>
+
+                    {/* Batasan ditulis terbuka, bukan disembunyikan */}
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                      Catatan: sesi yang sudah terbuka di perangkat lain masih
+                      berlaku sampai 30 menit setelah ini. Memutus semua sesi
+                      lama seketika belum didukung.
+                    </p>
+                  </form>
+
+                  <div className="pt-6 border-t border-white/5">
+                    <h3 className="font-semibold mb-1">Keluar</h3>
+                    <p className="text-xs text-gray-500 mb-4">
+                      Token di perangkat ini akan dihapus.
+                    </p>
+                    <button
+                      onClick={keluar}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-sm font-medium hover:bg-red-500/20 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Keluar dari Akun
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {tab === 'preferensi' && (
+                <div className="space-y-5">
+                  <h3 className="font-semibold">Preferensi</h3>
+
+                  <Sakelar
+                    label="Peringatan ancaman"
+                    desc="Tampilkan notifikasi saat hasil scan berbahaya"
+                    aktif={notifAncaman}
+                    onUbah={(v) => simpanPreferensi({ notifAncaman: v })}
+                  />
+                  <Sakelar
+                    label="Scan selesai"
+                    desc="Tampilkan notifikasi setiap scan selesai"
+                    aktif={notifScan}
+                    onUbah={(v) => simpanPreferensi({ notifScan: v })}
+                  />
+
+                  {/*
+                    Dikatakan apa adanya. Menampilkan sakelar yang seolah
+                    tersimpan di akun padahal cuma di browser akan menyesatkan -
+                    pengguna mengira pengaturannya ikut kalau ganti perangkat.
+                  */}
+                  <p className="text-xs text-gray-600 leading-relaxed pt-4 border-t border-white/5">
+                    Preferensi ini disimpan di browser ini saja, belum ikut ke
+                    akun. Kalau kamu membuka ThreatSense dari perangkat lain,
+                    pengaturannya kembali ke bawaan.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </main>
-
-      {/* Help Button Floating */}
-      <motion.button
-        className="fixed bottom-6 right-6 w-10 h-10 bg-white/10 border border-white/20 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors z-50"
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
-      >
-        <HelpCircle className="w-5 h-5 text-gray-300" />
-      </motion.button>
     </motion.div>
   )
 }
 
-// Toggle Switch Component
-function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
+function Sakelar({
+  label, desc, aktif, onUbah,
+}: {
+  label: string
+  desc: string
+  aktif: boolean
+  onUbah: (v: boolean) => void
+}) {
   return (
-    <motion.button
-      onClick={() => onChange(!checked)}
-      className={`relative w-14 h-7 rounded-full transition-colors ${
-        checked ? 'bg-cyan-500' : 'bg-gray-600'
-      }`}
-      whileTap={{ scale: 0.95 }}
-    >
-      <motion.div
-        className="absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-lg"
-        animate={{ x: checked ? 28 : 0 }}
-        transition={{ type: "spring", stiffness: 500, damping: 30 }}
-      />
-    </motion.button>
+    <div className="flex items-center justify-between gap-4 py-2">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-gray-500">{desc}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={aktif}
+        aria-label={label}
+        onClick={() => onUbah(!aktif)}
+        className={`w-11 h-6 rounded-full p-0.5 flex-shrink-0 transition-colors ${
+          aktif ? 'bg-cyan-500' : 'bg-white/10'
+        }`}
+      >
+        <motion.div
+          className="w-5 h-5 bg-white rounded-full"
+          animate={{ x: aktif ? 20 : 0 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+        />
+      </button>
+    </div>
   )
 }
 

@@ -266,10 +266,15 @@ def main():
         pickle.dump(best_model, f)
     print(f"\nModel disimpan ke: {model_path}")
 
-    explainer_path = os.path.join(MODELS_DIR, "shap_explainer.pkl")
-    with open(explainer_path, "wb") as f:
-        pickle.dump(explainer, f)
-    print(f"SHAP explainer disimpan ke: {explainer_path}")
+    # Objek SHAP explainer sengaja TIDAK disimpan ke berkas.
+    #
+    # Dulu disimpan sebagai shap_explainer.pkl, tapi tidak pernah sekali pun
+    # dibaca oleh aplikasi - hanya menumpuk sebagai berkas mati yang bikin
+    # bingung orang yang membaca isi folder. Grafik ringkasannya (gambar PNG
+    # di bawah) sudah cukup untuk keperluan laporan, dan itu memang dipakai.
+    #
+    # Kalau nanti SHAP dibutuhkan per-permintaan, explainer bisa dibuat ulang
+    # dari modelnya dalam hitungan detik - tidak perlu disimpan.
 
     metadata = {
         "best_model": best_model_name,

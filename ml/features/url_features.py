@@ -279,6 +279,59 @@ def deteksi_merek(teks: str, token: list[str]) -> str | None:
 
 
 # ============================================================
+# NORMALISASI ALAMAT
+# ============================================================
+
+# Alamat yang sudah lengkap: "skema://sisanya"
+_POLA_LENGKAP = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
+
+# Salah ketik yang paling sering: garis miring ganda hilang, jadi
+# "https:google.com" bukan "https://google.com".
+_POLA_KURANG_GARIS_MIRING = re.compile(
+    r"^([a-zA-Z][a-zA-Z0-9+.-]*):(?!//)(.*)$", re.DOTALL
+)
+
+
+def normalisasi_url(url: str) -> str:
+    """
+    Rapikan alamat yang diketik pengguna menjadi bentuk yang bisa diurai.
+
+    KENAPA PERLU FUNGSI KHUSUS
+    Sebelumnya alamat tanpa "://" langsung ditempeli "http://" di depan.
+    Cara itu benar untuk "google.com", tapi merusak "https:google.com"
+    (salah ketik yang sangat umum): hasilnya jadi "http://https:google.com",
+    lalu Python membaca "https" sebagai nama host dan "google.com" sebagai
+    nomor port - langsung gagal dengan:
+
+        ValueError: Port could not be cast to integer value as 'google.com'
+
+    Errornya muncul jauh di dalam ekstraksi fitur, sehingga seluruh
+    pemindaian berhenti dan pengguna hanya melihat "kesalahan internal"
+    padahal dia cuma kurang mengetik dua garis miring.
+    """
+    teks = (url or "").strip()
+    if not teks:
+        return ""
+
+    # Buang spasi di tengah yang biasanya terbawa saat menyalin dari chat
+    teks = teks.replace(" ", "")
+
+    if _POLA_LENGKAP.match(teks):
+        return teks
+
+    # "https:google.com" -> "https://google.com"
+    kurang = _POLA_KURANG_GARIS_MIRING.match(teks)
+    if kurang:
+        skema, sisa = kurang.group(1), kurang.group(2)
+        # Hanya diperbaiki kalau sisanya memang mirip alamat, bukan nomor
+        # port seperti "localhost:8000" - di situ titik dua justru benar.
+        if sisa and not sisa[0].isdigit():
+            return f"{skema}://{sisa}"
+
+    return "http://" + teks
+
+
+# ============================================================
 # FUNGSI UTAMA
 # ============================================================
 
@@ -294,9 +347,7 @@ def extract_url_features(url: str) -> dict:
         jadi "https://situs.com" dan "http://situs.com/apa/saja" menghasilkan
         fitur yang PERSIS SAMA. Ini disengaja - lihat penjelasan di atas.
     """
-    teks = (url or "").strip()
-    if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", teks):
-        teks = "http://" + teks
+    teks = normalisasi_url(url)
 
     parsed = urlparse(teks)
     hostname = (parsed.hostname or "").lower()
@@ -350,7 +401,15 @@ def extract_url_features(url: str) -> dict:
 
     # ---------- 7. Bentuk alamat ----------
     f["has_ip_address"] = 1 if _IP_PATTERN.match(hostname) else 0
-    f["has_port"] = 1 if parsed.port is not None else 0
+    # parsed.port BISA melempar ValueError, bukan sekadar mengembalikan None.
+    # Itu terjadi kalau bagian setelah titik dua bukan angka, contohnya pada
+    # "http://https:google.com". Karena hanya dipakai sebagai satu fitur
+    # kecil, kegagalannya tidak boleh menghentikan seluruh pemindaian -
+    # cukup dianggap "tidak ada port".
+    try:
+        f["has_port"] = 1 if parsed.port is not None else 0
+    except ValueError:
+        f["has_port"] = 0
     f["has_punycode"] = 1 if "xn--" in hostname else 0  # huruf non-latin yang menyamar
 
     registered = f"{domain}.{suffix}" if domain and suffix else hostname

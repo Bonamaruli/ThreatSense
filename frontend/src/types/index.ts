@@ -26,6 +26,13 @@ export interface ScanResult {
      * domain resmi BRI" langsung bisa dimengerti dan ditindaklanjuti.
      */
     explanations?: ScanExplanation[];
+    /**
+     * Bukti hasil pemeriksaan mendalam - umur domain, negara server,
+     * sertifikat, dan seterusnya. Kosong kalau pemindaiannya cepat.
+     */
+    evidenceSummary?: { label: string; nilai: string }[];
+    /** true bila alamatnya benar-benar dibuka untuk diperiksa. */
+    deepScan?: boolean;
   };
 }
 

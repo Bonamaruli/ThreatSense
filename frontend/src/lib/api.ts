@@ -62,8 +62,16 @@ apiClient.interceptors.response.use(
       if (typeof data?.detail === 'string') {
         pesan = data.detail;
       } else if (Array.isArray(data?.detail)) {
-        // Kesalahan validasi datang sebagai daftar objek
-        pesan = data.detail.map((d: any) => d?.msg).filter(Boolean).join('. ');
+        // Kesalahan validasi datang sebagai daftar objek.
+        //
+        // Awalan "Value error, " dibuang: itu istilah internal Pydantic yang
+        // tidak berarti apa-apa bagi pengguna. Tanpa dibuang, pesannya jadi
+        // "Value error, Alamat tidak dikenali..." yang terlihat seperti
+        // program rusak, padahal cuma salah ketik.
+        pesan = data.detail
+          .map((d: any) => String(d?.msg ?? '').replace(/^Value error,\s*/i, ''))
+          .filter(Boolean)
+          .join('. ');
       } else if (typeof data?.error?.message === 'string') {
         pesan = data.error.message;
       }

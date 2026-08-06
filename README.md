@@ -7,12 +7,54 @@ ThreatSense adalah platform keamanan siber berbasis AI untuk mendeteksi ancaman 
 - File Scan
 - Dashboard Monitoring
 
+## Struktur Folder
+
+```
+ThreatSense/
+├── run.py                     jalankan backend dari folder mana pun
+├── start-backend.bat          klik dua kali untuk menjalankan
+├── perbaiki-venv.bat          perbaiki venv setelah folder dipindah
+├── requirements.txt
+│
+├── backend/
+│   ├── alembic/               migrasi database (versions/ = kode, di-commit)
+│   ├── app/
+│   │   ├── core/              keamanan sandi, token, pembatas laju
+│   │   ├── models/            definisi tabel (sumber kebenaran tunggal)
+│   │   ├── routers/           endpoint API
+│   │   ├── schemas/           bentuk data masuk & keluar
+│   │   └── services/          logika bisnis
+│   └── tests/                 133 tes otomatis
+│
+├── ml/
+│   ├── features/    MENGUKUR    ubah masukan mentah jadi angka
+│   ├── scoring/     MEMUTUSKAN  ubah angka jadi kesimpulan
+│   ├── training/    MELATIH     hasilkan berkas model (dijalankan manual)
+│   ├── models/      MENYIMPAN   berkas model & daftar putih
+│   ├── data/                    unduh & susun dataset
+│   └── evaluation/              uji dengan data nyata
+│
+└── frontend/                  Next.js
+```
+
+Empat folder di `ml/` sengaja dipisah menurut PERANNYA, bukan menurut jenis
+berkasnya. Sebelumnya skrip pelatihan bercampur dengan berkas model hasil
+keluarannya, dan modul penilaian berserakan di akar `ml/` — susunan itu
+membuat orang sulit menebak berkas mana yang dijalankan dan mana yang cuma
+hasil.
+
 ## Teknologi
 
 ### Backend
 - FastAPI
-- SQLAlchemy
-- SQLite
+- SQLAlchemy + Alembic
+- PostgreSQL 18
+
+### Machine Learning
+- XGBoost (dua model terpisah, lihat bagian Machine Learning di bawah)
+- scikit-learn (validasi silang, pemeriksaan kebocoran)
+- httpx + BeautifulSoup (pengambilan & pembacaan halaman)
+- python-whois, dnspython (umur domain, DNS)
 
 ### Frontend
 - Next.js
@@ -84,7 +126,56 @@ Kalau database belum ada, buat dulu lewat pgAdmin atau psql:
 psql -U postgres -c "CREATE DATABASE threatsense;"
 ```
 
-Tabelnya dibuat otomatis saat backend pertama kali dijalankan.
+Lalu buat tabelnya dengan migrasi:
+
+```bash
+backend\venv\Scripts\python.exe -m alembic upgrade head
+```
+
+> Jalankan perintah itu dari folder `backend`.
+
+## Mengubah Struktur Tabel (Alembic)
+
+Struktur tabel HANYA diubah lewat migrasi. Pembuatan tabel otomatis
+(`create_all`) sudah dimatikan, dan ini alasannya:
+
+`create_all` hanya MEMBUAT tabel yang belum ada — dia tidak pernah mengubah
+tabel yang sudah terlanjur ada. Jadi perubahan model hanya terpasang di
+komputer yang databasenya masih kosong, tanpa satu pun pesan error.
+
+Itu benar-benar terjadi di project ini dan baru ketahuan saat Alembic
+dipasang:
+
+- `input_value` sudah `Text` di model, tapi masih `VARCHAR(1000)` di database
+- **Tiga indeks tidak pernah terbuat** (`scan_type`, `threat_label`,
+  `created_at`), sehingga setiap penyaringan riwayat memindai seluruh tabel
+
+Alur kerja setelah mengubah model:
+
+```bash
+python -m alembic revision --autogenerate -m "keterangan perubahan"
+```
+
+Lalu **baca dulu** berkas migrasi yang dihasilkan di `alembic/versions/`.
+Autogenerate sering benar tapi tidak selalu — terutama untuk penggantian
+nama kolom, yang terbaca sebagai "hapus kolom lama, buat kolom baru" dan
+akan menghilangkan datanya.
+
+```bash
+python -m alembic upgrade head      # terapkan
+python -m alembic downgrade -1      # batalkan satu langkah
+python -m alembic current           # versi yang sedang dipakai
+python -m alembic check             # ada penyimpangan model vs database?
+```
+
+Berkas di `alembic/versions/` adalah KODE, jadi ikut di-commit ke git.
+Tanpa itu, orang lain tidak bisa menyusun ulang databasemu.
+
+Alamat database sengaja tidak ditulis di `alembic.ini` melainkan diambil
+dari `app/config.py`. Menuliskannya dua kali membuat keduanya cepat atau
+lambat berbeda — dan migrasi bisa berjalan di database yang salah tanpa
+peringatan. Selain itu `alembic.ini` ikut masuk git, jadi sandi database
+tidak boleh ada di sana.
 
 ## Menjalankan Frontend
 
@@ -93,6 +184,54 @@ cd frontend
 npm install
 npm run dev
 ```
+
+## Menjalankan Tes
+
+```bash
+backend\venv\Scripts\python.exe -m pytest backend/tests -q
+```
+
+133 tes yang menjaga: pendaftaran dan masuk, penolakan tanpa token, **isolasi
+riwayat antar akun**, penjagaan SSRF, pembatas laju, cache, analisis berkas,
+dan perilaku mesin pemindaian. Jalankan setiap kali selesai mengubah kode
+backend.
+
+Tes memakai database SQLite sementara, BUKAN database aslimu, jadi aman
+dijalankan berkali-kali.
+
+## Sistem Akun
+
+Setiap scan tercatat atas nama pemiliknya. Riwayat dan statistik satu akun
+tidak bisa dilihat akun lain.
+
+| Endpoint | Kegunaan |
+|---|---|
+| `POST /api/v1/auth/register` | Daftar akun baru |
+| `POST /api/v1/auth/login` | Masuk, mendapat token |
+| `GET /api/v1/auth/me` | Profil pemilik token |
+| `PUT /api/v1/auth/me` | Ubah nama/email |
+| `PUT /api/v1/auth/me/password` | Ganti sandi (sandi lama wajib benar) |
+| `GET /api/v1/scan/{id}` | Rincian satu riwayat milik sendiri |
+| `DELETE /api/v1/scan/{id}` | Hapus riwayat milik sendiri |
+
+Seluruh endpoint scan dan dashboard menuntut token yang sah.
+
+Keputusan keamanan yang diambil, tulis di laporan:
+
+- Sandi disimpan sebagai hash bcrypt, bukan teks asli
+- "Email tidak terdaftar" dan "sandi salah" memberi pesan yang **sama**,
+  supaya halaman masuk tidak bisa dipakai memeriksa email mana yang punya akun
+- Riwayat milik orang lain dijawab **404**, bukan 403 — jawaban 403 memberi
+  tahu bahwa id itu ada
+- Pemilik data selalu diambil dari token, tidak pernah dari parameter URL
+
+Batasan yang diakui terbuka:
+
+- Token disimpan di `localStorage`, jadi rawan dicuri kalau ada celah XSS.
+  Cara lebih aman adalah cookie HttpOnly, belum dikerjakan.
+- Mengganti sandi tidak memutus sesi yang sudah terbuka di perangkat lain;
+  sesi lama berlaku sampai kedaluwarsa sendiri (30 menit).
+- Preferensi notifikasi hanya tersimpan di browser, belum ikut ke akun.
 
 
 
@@ -181,13 +320,134 @@ BATASAN YANG DIAKUI TERBUKA (tulis ini di laporan, jangan disembunyikan)
     tidak bisa dipakai melatih model karena domainnya disensor di sumbernya
     (bentuknya "s****sqq.com"), tapi tetap dipakai menguji cakupan aturan.
 
+PEMINDAIAN MENDALAM (benar-benar membuka alamatnya)
+
+Pemindaian cepat hanya membaca nama domain. Itu terbukti tidak cukup:
+saat 500 domain sah diperiksa, yang benar-benar memutuskan ternyata
+
+    tidak ada sinyal -> dianggap aman   471 (94,2%)
+    aturan kata kunci                     28 (5,6%)
+    model machine learning                 1 (0,2%)
+
+Model lama praktis tidak berperan, dan halaman phishing di domain bernama
+polos (misalnya "tokobungamelati.com") lolos begitu saja.
+
+Pemindaian mendalam mengumpulkan BUKTI, bukan tebakan dari nama:
+
+    Pendaftaran : umur domain, negara, registrar
+    Jaringan    : alamat IP, negara server, penyedia hosting
+    Keamanan    : sertifikat SSL, umur dan penerbitnya
+    Perilaku    : apa yang terjadi kalau diklik (rantai pengalihan)
+    Isi halaman : kolom sandi, form yang mengirim ke domain lain, kata
+                  judi di teks, peniruan merek, iframe tersembunyi
+
+Cara memakainya:
+
+    POST /api/v1/scan/url
+    {"url": "https://contoh.com", "mendalam": true}
+
+Butuh 3-13 detik (dibanding 0,1 detik untuk pemindaian nama). Aman
+dijalankan: JavaScript TIDAK PERNAH dijalankan, halaman hanya diunduh
+sebagai teks, dengan batas waktu dan batas ukuran.
+
+Inilah yang menjawab "bagaimana kalau domain resmi yang baru?":
+
+    toko baru resmi : umur 5 hari, tanpa kolom sandi   -> Aman
+    phishing baru   : umur 5 hari, ADA kolom sandi dan
+                      menyebut nama bank               -> Bahaya
+
+Umur muda sendirian diberi bobot rendah - setiap situs pernah baru.
+Yang menentukan adalah GABUNGANNYA dengan bukti lain.
+
+FILE SCANNER - analisis statis
+
+Berkas TIDAK PERNAH dijalankan, hanya dibaca sebagai data. Yang diperiksa:
+
+  Jenis asli    : dibaca dari magic bytes, bukan dari ekstensinya. Berkas
+                  bernama "faktur.pdf" yang isinya program Windows langsung
+                  tertangkap - dan itu tidak akan pernah terlihat dari namanya
+  Ekstensi ganda: "invoice.pdf.exe"
+  Makro Office  : dokumen yang membawa program di dalamnya
+  PDF berbahaya : JavaScript dan perintah yang jalan otomatis saat dibuka
+  Arsip         : program yang diselundupkan di dalam ZIP
+  Entropi       : isi teracak, tanda berkas dipak agar sulit diperiksa
+  SHA-256       : sidik jari berkas
+
+Batasan yang diakui terbuka: ini analisis STRUKTUR berkas, bukan pencocokan
+dengan daftar malware yang sudah dikenal. Melatih model deteksi malware
+butuh ribuan contoh berkas jahat sungguhan - menyimpan koleksi seperti itu
+di laptop pribadi adalah risiko yang tidak sepadan untuk tugas akhir.
+
+PENJAGAAN KEAMANAN & KETAHANAN
+
+Empat hal yang ditutup setelah audit backend, semuanya terbukti lewat
+pengujian bukan dugaan:
+
+1. SSRF (Server-Side Request Forgery)
+   Pemindaian mendalam membuka alamat apa pun yang diketik pengguna. Tanpa
+   penjagaan, server bisa dipakai sebagai perantara menjangkau jaringan
+   internal - terbukti: memindai "http://127.0.0.1:8000/health" berhasil
+   dan mengembalikan status 200.
+
+   Sekarang nama domain diterjemahkan dulu jadi alamat IP, lalu IP-nya
+   diperiksa - memeriksa nama saja tidak cukup, karena domain biasa bisa
+   diarahkan ke 127.0.0.1. Pemeriksaan diulang setelah SETIAP pengalihan.
+   Skema selain http/https (file://, gopher://, dict://) ditolak.
+
+2. Batas laju + batas jumlah bersamaan
+   Pemindaian mendalam butuh 3-13 detik dan menahan satu thread pekerja.
+   Terbukti: 13 permintaan serentak membuat SELURUH API berhenti menjawab,
+   login dan pemindaian cepat ikut macet.
+
+   Sekarang ada dua lapis: 10 per menit per akun, dan maksimal 4 berjalan
+   bersamaan. Diuji dengan 14 permintaan serentak - 4 berhasil, 10 ditolak
+   429, nol kesalahan internal, server tetap sehat.
+
+3. Cache pemeriksaan domain
+   WHOIS diulang untuk domain yang sama padahal hasilnya jarang berubah.
+   Sekarang bagian stabil (umur, negara, registrar, sertifikat) disimpan
+   7 hari. Terukur menghemat 3 detik per pemindaian ulang.
+
+   Isi halaman TIDAK ikut disimpan dan selalu diambil segar - halaman
+   phishing bisa berubah dalam hitungan jam, dan menyajikan isi basi justru
+   lebih berbahaya daripada tidak menyimpan sama sekali.
+
+4. Batas ukuran masukan email (1 MB)
+
+Batasan yang diakui terbuka: catatan batas laju disimpan di memori proses.
+Kalau backend dijalankan lebih dari satu proses, tiap proses punya
+hitungannya sendiri sehingga batas sesungguhnya jadi berlipat. Untuk
+produksi perlu Redis - sudah ada di requirements tapi belum dipakai.
+
+BELAJAR DARI KESALAHAN
+
+    POST /api/v1/feedback              kirim koreksi saat sistem salah
+    GET  /api/v1/feedback/statistik    berapa kali salah alarm / kecolongan
+
+    python ml/training/retrain_dengan_koreksi.py --latih
+
+Koreksi dibobot 50x karena jumlahnya sedikit dibanding 40.000 baris data
+latih; tanpa itu pengaruhnya tenggelam. Minimal 10 koreksi dulu - terlalu
+sedikit contoh justru bisa menggeser model ke arah yang keliru.
+
 PERINTAH YANG SERING DIPAKAI
 
-  python ml/data/download_sources.py     # unduh data mentah (sekali saja)
-  python ml/data/build_dataset.py        # susun dataset
-  python ml/data/check_leakage.py        # WAJIB lolos sebelum training
-  python ml/models/train_model.py        # latih model
-  python ml/evaluation/holdout_test.py   # uji dengan URL nyata
+  python ml/data/download_sources.py       # unduh data mentah (sekali saja)
+
+  # Jalur cepat - model nama domain
+  python ml/data/build_dataset.py
+  python ml/data/check_leakage.py          # WAJIB lolos sebelum training
+  python ml/training/train_model.py
+  python ml/evaluation/holdout_test.py
+
+  # Jalur mendalam - model bukti
+  python ml/data/build_deep_dataset.py --jumlah 2000
+  python ml/data/check_leakage.py --dataset ml/data/processed/deep_features.csv
+  python ml/training/train_deep_model.py
+  python ml/evaluation/deep_test.py        # bandingkan cepat vs mendalam
+
+  # Tes otomatis
+  backend\venv\Scripts\python.exe -m pytest backend/tests -q
 📁 STRUKTUR FOLDER BACKEND
 C:\Users\Asus\Documents\ThreatSense\backend\
 ├── app/

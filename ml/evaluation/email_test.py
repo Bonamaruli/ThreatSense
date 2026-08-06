@@ -31,7 +31,7 @@ _root = os.path.abspath(os.path.join(_current, "..", "..", ".."))
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
-from ml.predict_email import predict_email  # noqa: E402
+from ml.scoring.email import predict_email  # noqa: E402
 
 
 # ============================================================

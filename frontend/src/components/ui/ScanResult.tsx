@@ -2,8 +2,12 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { ShieldCheck, ShieldAlert, ShieldX, X, Info } from 'lucide-react';
+import {
+  ShieldCheck, ShieldAlert, ShieldX, X, Info, Search,
+  ThumbsUp, ThumbsDown, Check,
+} from 'lucide-react';
 import type { ScanResult as ScanResultType, ScanStatus } from '@/types';
+import { feedbackApi } from '@/lib/services';
 
 interface ScanResultProps {
   result: ScanResultType;
@@ -58,6 +62,23 @@ export function ScanResult({ result, onClose }: ScanResultProps) {
   const Icon = config.icon;
   const persen = Math.round((result.score ?? 0) * 100);
   const explanations = result.details?.explanations ?? [];
+  const bukti = result.details?.evidenceSummary ?? [];
+  const mendalam = Boolean(result.details?.deepScan);
+
+  // Koreksi pengguna. Inilah yang membuat model bisa membaik dari waktu ke
+  // waktu - setiap koreksi jadi bahan pelatihan berikutnya.
+  const [koreksiTerkirim, setKoreksiTerkirim] = React.useState<string | null>(null);
+  const [mengirim, setMengirim] = React.useState(false);
+
+  const kirimKoreksi = async (koreksi: 'safe' | 'malicious') => {
+    if (mengirim || koreksiTerkirim) return;
+    setMengirim(true);
+    const r = await feedbackApi.kirim(result.id, koreksi);
+    if (r.success) {
+      setKoreksiTerkirim(koreksi);
+    }
+    setMengirim(false);
+  };
 
   return (
     <motion.div
@@ -147,18 +168,102 @@ export function ScanResult({ result, onClose }: ScanResultProps) {
         </div>
       )}
 
+      {/* --- Bukti hasil pemeriksaan mendalam --- */}
+      {/*
+        Ditampilkan sebagai daftar netral, termasuk yang menenangkan. Inilah
+        yang membedakan "kesimpulan" dari "tuduhan": pengguna bisa melihat
+        sendiri dasar penilaiannya dan menilai ulang kalau tidak setuju.
+      */}
+      {/* Ditampilkan kapan pun buktinya ADA, tidak khusus pemindaian mendalam.
+          Hasil File Scanner juga membawa bukti (jenis berkas sebenarnya,
+          entropi, SHA-256) padahal deep_scan-nya bernilai false - kalau
+          syaratnya dipatok ke deep_scan, bukti itu tidak akan pernah tampil. */}
+      {bukti.length > 0 && (
+        <div className="mt-5">
+          <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">
+            <Search className="w-3.5 h-3.5" />
+            Bukti yang dikumpulkan
+          </h4>
+
+          <div className="rounded-lg bg-black/20 border border-white/5 divide-y divide-white/5">
+            {bukti.map((b, i) => (
+              <motion.div
+                key={`${b.label}-${i}`}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.05 + i * 0.03 }}
+                className="flex items-start justify-between gap-4 px-3 py-2"
+              >
+                <span className="text-xs text-gray-500 flex-shrink-0">{b.label}</span>
+                <span className="text-xs text-gray-200 text-right break-all">
+                  {b.nilai}
+                </span>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* --- Koreksi pengguna --- */}
+      {/*
+        Kalau penilaiannya salah, koreksi di sini langsung jadi bahan
+        pelatihan model berikutnya. Ditaruh di hasil scan, bukan disembunyikan
+        di menu - saat inilah pengguna paling tahu jawaban yang benar.
+      */}
+      <div className="mt-5 pt-4 border-t border-white/10">
+        {koreksiTerkirim ? (
+          <p className="flex items-center gap-2 text-xs text-green-400">
+            <Check className="w-3.5 h-3.5" />
+            Terima kasih. Koreksimu tersimpan dan akan dipakai melatih model
+            berikutnya.
+          </p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs text-gray-500">Menurutmu penilaian ini salah?</span>
+            <button
+              type="button"
+              disabled={mengirim}
+              onClick={() => kirimKoreksi('safe')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 text-xs text-gray-300 hover:bg-white/5 transition-colors disabled:opacity-50"
+            >
+              <ThumbsUp className="w-3.5 h-3.5" />
+              Sebenarnya aman
+            </button>
+            <button
+              type="button"
+              disabled={mengirim}
+              onClick={() => kirimKoreksi('malicious')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 text-xs text-gray-300 hover:bg-white/5 transition-colors disabled:opacity-50"
+            >
+              <ThumbsDown className="w-3.5 h-3.5" />
+              Sebenarnya berbahaya
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* --- Batasan yang diakui terbuka --- */}
       {/*
         Ditulis di layar, bukan cuma di laporan, supaya pengguna tidak merasa
         terlalu aman setelah melihat label "Aman". Kalimatnya dibedakan per
         jenis scan karena batas masing-masing memang berbeda.
       */}
+      {/*
+        Kalimat batasannya HARUS ikut berubah saat pemeriksaan mendalam.
+        Sebelumnya selalu tertulis "hanya membaca nama domain" - padahal di
+        pemindaian mendalam halamannya benar-benar dibuka, dan buktinya
+        terpampang tepat di atas kalimat itu. Keterangan yang bertentangan
+        dengan isi layarnya sendiri membuat seluruh hasil jadi tidak
+        meyakinkan.
+      */}
       <p className="mt-5 pt-4 border-t border-white/10 text-xs text-gray-500 leading-relaxed">
         {result.type === 'email'
           ? 'Pemeriksaan ini membaca header dan isi email, tapi belum memverifikasi keaslian pengirim lewat SPF/DKIM. Pemalsuan alamat pengirim yang rapi masih mungkin lolos.'
           : result.type === 'file'
           ? 'Pemeriksaan file masih terbatas dan belum membuka isi berkasnya. Jangan jadikan hasil ini satu-satunya dasar keputusan.'
-          : 'Pemeriksaan ini menganalisis nama domain, bukan isi halamannya. Situs sah yang diretas dan dititipi halaman palsu bisa lolos.'}
+          : mendalam
+          ? 'Halaman ini benar-benar dibuka dan dibaca, tapi tanpa menjalankan skrip di dalamnya. Halaman yang isinya baru muncul setelah skrip berjalan belum bisa diperiksa.'
+          : 'Pemeriksaan ini baru menganalisis nama domain, belum membuka isi halamannya. Nyalakan Pemeriksaan mendalam untuk bukti yang lebih meyakinkan.'}
         {' '}Tetap berhati-hati sebelum memasukkan data pribadi.
       </p>
     </motion.div>

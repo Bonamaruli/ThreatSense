@@ -15,7 +15,8 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.schemas.auth import (
-    LoginRequest, RegisterRequest, TokenResponse, UserResponse,
+    GantiSandiRequest, LoginRequest, RegisterRequest, TokenResponse,
+    UpdateProfilRequest, UserResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,3 +104,69 @@ def profil_saya(user: User = Depends(get_current_user)):
     percaya data profil yang disimpan di sisi browser.
     """
     return UserResponse.model_validate(user)
+
+
+@router.put("/me", response_model=UserResponse)
+def ubah_profil(
+    req: UpdateProfilRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Ubah nama dan/atau email milik sendiri.
+
+    Yang diubah SELALU akun pemilik token. Tidak ada parameter id di sini -
+    kalau ada, siapa pun bisa mengirim id orang lain dan mengubah akunnya.
+    """
+    if req.nama is not None:
+        user.nama = req.nama.strip()
+
+    if req.email is not None:
+        email_baru = req.email.lower().strip()
+        if email_baru != user.email:
+            bentrok = (
+                db.query(User)
+                .filter(User.email == email_baru, User.id != user.id)
+                .first()
+            )
+            if bentrok:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email itu sudah dipakai akun lain.",
+                )
+            user.email = email_baru
+
+    db.commit()
+    db.refresh(user)
+    return UserResponse.model_validate(user)
+
+
+@router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+def ganti_sandi(
+    req: GantiSandiRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Ganti sandi. Sandi lama wajib benar."""
+    if not cek_sandi(req.sandi_lama, user.hash_sandi):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sandi lama salah.",
+        )
+
+    if cek_sandi(req.sandi_baru, user.hash_sandi):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sandi baru tidak boleh sama dengan yang lama.",
+        )
+
+    user.hash_sandi = hash_sandi(req.sandi_baru)
+    db.commit()
+
+    logger.info("Sandi diganti untuk akun: %s", user.email)
+
+    # CATATAN JUJUR: token yang sudah terbit sebelum ini TETAP berlaku
+    # sampai kedaluwarsa sendiri (30 menit). Untuk benar-benar memutus semua
+    # sesi lama, perlu daftar token yang dicabut atau nomor versi token di
+    # tabel users. Belum dikerjakan - tulis batasan ini di laporan.
+    return None

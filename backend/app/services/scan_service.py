@@ -20,8 +20,9 @@ _project_root = os.path.abspath(os.path.join(_backend_dir, ".."))  # .../ThreatS
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from ml.predict import predict_url  # noqa: E402
-from ml.predict_email import predict_email  # noqa: E402
+from ml.scoring.url import predict_url  # noqa: E402
+from ml.scoring.file import predict_file  # noqa: E402
+from ml.scoring.email import predict_email  # noqa: E402
 
 from app.models.threat import ScanHistory
 from app.schemas.scan import (
@@ -33,26 +34,17 @@ from app.schemas.scan import (
 )
 
 # ============================================================
-# LOGIKA SEMENTARA - TINGGAL UNTUK FILE SCANNER
+# MESIN PENILAIAN - ketiganya sudah memakai analisis asli
 # ============================================================
-# URL Scanner   -> ml/predict.py        (selesai)
-# Email Scanner -> ml/predict_email.py  (selesai)
-# File Scanner  -> masih memakai dua fungsi di bawah
+# URL Scanner   -> ml/predict.py        (nama domain + bukti dari membuka
+#                                        alamatnya + model machine learning)
+# Email Scanner -> ml/predict_email.py  (header + isi surat)
+# File Scanner  -> ml/predict_file.py   (analisis statis isi berkas)
 #
-# Dua fungsi ini hanya menebak dari kata kunci pada NAMA berkas, tidak
-# membuka isinya sama sekali. Hasilnya BELUM boleh dipakai sebagai temuan
-# di laporan.
-def dummy_extract_features(input_val: str, scan_type: str) -> dict:
-    return {"input": input_val, "type": scan_type, "length": len(input_val)}
-
-def dummy_predict(features: dict) -> tuple[float, str]:
-    """Tebakan kasar berbasis kata kunci untuk email & file."""
-    text = features.get("input", "").lower()
-    if any(kw in text for kw in ["login", "bank", "secure", "verify", "phishing"]):
-        return 0.85, "Malicious"
-    elif len(text) > 150:
-        return 0.55, "Suspicious"
-    return 0.10, "Safe"
+# Dua fungsi tebakan lama (dummy_extract_features dan dummy_predict) sudah
+# dihapus. Keduanya hanya membaca kata kunci pada teks masukan dan tidak
+# pernah membuka isi sebenarnya - menyisakannya di sini hanya akan
+# menggoda orang untuk memakainya lagi.
 
 
 # === CORE SERVICE FUNCTIONS ===
@@ -65,13 +57,32 @@ def process_url_scan(db: Session, req: UrlScanRequest, user_id=None) -> UrlScanR
     didengar saat dia yakin. Penjelasan lengkap alasannya ada di docstring
     ml/predict.py.
     """
-    hasil = predict_url(req.url)
+    mendalam = getattr(req, "mendalam", False)
+
+    # Ambil hasil pemeriksaan domain yang sudah pernah disimpan, supaya
+    # WHOIS tidak dipanggil berulang untuk domain yang sama. Hanya bagian
+    # stabil yang dipakai ulang - isi halaman selalu diambil segar.
+    cache_domain = None
+    if mendalam:
+        from app.services import cache_service
+        from ml.scoring.url import _domain_terdaftar
+
+        nama_domain = _domain_terdaftar(req.url)
+        cache_domain = cache_service.ambil(db, nama_domain)
+
+    hasil = predict_url(req.url, mendalam=mendalam, cache_domain=cache_domain)
+
+    # Simpan hasil baru untuk dipakai pemindaian berikutnya
+    if mendalam and hasil.get("evidence") and not cache_domain:
+        cache_service.simpan(db, nama_domain, hasil["evidence"])
 
     record = ScanHistory(
         id=uuid.uuid4(), user_id=user_id, scan_type="url", input_value=req.url,
         risk_score=hasil["risk_score"], threat_label=hasil["threat_label"],
         features_json=hasil["features"],
         explanations=hasil["explanations"],
+        evidence_summary=hasil.get("evidence_summary") or None,
+        deep_scan=bool(hasil.get("deep_scan")),
         # shap_values menyimpan angka mentah dari model, dipisah dari
         # explanations yang berisi kalimat untuk dibaca pengguna.
         shap_values={
@@ -122,14 +133,26 @@ def process_email_scan(db: Session, req: EmailScanRequest, user_id=None) -> Emai
     return EmailScanResponse.model_validate(record)
 
 def process_file_scan(db: Session, filename: str, file_bytes: bytes, req: FileScanRequest = None, user_id=None) -> FileScanResponse:
-    features = dummy_extract_features(filename, "file")
-    features["file_size"] = len(file_bytes)
-    risk_score, threat_label = dummy_predict(features)
+    """
+    Pindai berkas dengan analisis statis.
+
+    Berkasnya TIDAK PERNAH dijalankan - hanya dibaca sebagai data. Yang
+    diperiksa adalah isi sebenarnya (magic bytes), kecocokan dengan
+    ekstensinya, keberadaan makro, dan pola berbahaya di dalam PDF.
+
+    Sebelumnya bagian ini cuma menebak dari nama berkas dan ukurannya,
+    sehingga "virus.exe" yang diganti nama jadi "faktur.pdf" lolos begitu
+    saja - sekarang justru itulah yang paling cepat tertangkap.
+    """
+    hasil = predict_file(filename, file_bytes)
 
     record = ScanHistory(
         id=uuid.uuid4(), user_id=user_id, scan_type="file", input_value=filename,
-        risk_score=risk_score, threat_label=threat_label,
-        features_json=features, shap_values={}
+        risk_score=hasil["risk_score"], threat_label=hasil["threat_label"],
+        features_json=hasil["features"],
+        explanations=hasil["explanations"],
+        evidence_summary=hasil["evidence_summary"],
+        shap_values={"rules_fired": hasil["rules_fired"]}
         # created_at sengaja TIDAK diisi di sini — biarkan database yang
         # mengisi lewat server_default=func.now(). Jam server database jadi
         # satu-satunya acuan waktu, jadi tidak ada selisih jam antara
